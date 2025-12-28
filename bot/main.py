@@ -252,7 +252,7 @@ async def find_partner(user_id: int, category: str, bot: Bot):
         try:
             await bot.send_message(
                 partner_id,
-                "🎉 Собеседник найден!\n💬 Можете начать общение:",
+                "🎉 Собеседник найден!\n🎉 Можете начать общение:",
                 reply_markup=get_chat_actions_keyboard()
             )
         except Exception as e:
@@ -284,11 +284,10 @@ def get_search_category_keyboard():
     ])
 
 def get_chat_actions_keyboard():
-    """Кнопки действий в чате"""
+    """Кнопки действий в чате (БЕЗ РЕЙТИНГА!)"""
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⭐ Оценить", callback_data="rate_user")],
         [InlineKeyboardButton(text="🚫 Жалоба", callback_data="report_user")],
-        [InlineKeyboardButton(text="🛑 Завершить чат", callback_data="end_chat")],
+        [InlineKeyboardButton(text="🚪 Завершить чат", callback_data="end_chat")],
     ])
 
 def get_report_reasons_keyboard():
@@ -322,7 +321,7 @@ async def cmd_start(message: Message, state: FSMContext):
         await message.answer(
             f"👋 Привет, {message.from_user.first_name or 'друг'}!\n\n"
             "🎉 Добро пожаловать в Анонимный Чат!\n\n"
-            "Найди интересного собеседника и начни общение 💬",
+            "Найди интересного собеседника и начни общение 📬",
             reply_markup=get_main_menu()
         )
         await state.clear()
@@ -509,7 +508,7 @@ async def handle_category_selection(callback: CallbackQuery, state: FSMContext):
             chat_id = active_chats[user_id]['chat_id']
             
             await callback.message.edit_text(
-                "🎉 Собеседник найден!\n💬 Начните общение:",
+                "🎉 Собеседник найден!\n📬 Начните общение:",
                 reply_markup=get_chat_actions_keyboard()
             )
             
@@ -570,25 +569,6 @@ async def handle_chat_message(message: Message, state: FSMContext):
             )
     except Exception as e:
         logger.error(f"❌ Ошибка в handle_chat_message: {e}", exc_info=True)
-
-async def handle_rate_user(callback: CallbackQuery, state: FSMContext):
-    """Оценить собеседника"""
-    try:
-        await callback.answer()
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="⭐⭐⭐⭐⭐", callback_data="rating_5")],
-            [InlineKeyboardButton(text="⭐⭐⭐⭐", callback_data="rating_4")],
-            [InlineKeyboardButton(text="⭐⭐⭐", callback_data="rating_3")],
-            [InlineKeyboardButton(text="⭐⭐", callback_data="rating_2")],
-            [InlineKeyboardButton(text="⭐", callback_data="rating_1")],
-        ])
-        
-        await callback.message.edit_text(
-            "⭐ Оцените общение:",
-            reply_markup=kb
-        )
-    except Exception as e:
-        logger.error(f"❌ Ошибка: {e}")
 
 async def handle_report_user(callback: CallbackQuery, state: FSMContext):
     """Начать жалобу"""
@@ -655,34 +635,6 @@ async def handle_end_chat(callback: CallbackQuery, state: FSMContext):
     except Exception as e:
         logger.error(f"❌ Ошибка: {e}")
 
-async def handle_rating(callback: CallbackQuery, state: FSMContext):
-    """Обработать оценку"""
-    try:
-        rating = callback.data.split('_')[1]
-        data = await state.get_data()
-        
-        partner_id = data.get('partner_id')
-        chat_id = data.get('chat_id')
-        user_id = callback.from_user.id
-        
-        logger.info(f"⭐ {user_id} оценил {partner_id} на {rating} звёзд")
-        
-        # Завершить чат
-        db.end_chat(chat_id)
-        active_chats.pop(user_id, None)
-        active_chats.pop(partner_id, None)
-        
-        await callback.answer("✅ Спасибо за оценку!", show_alert=True)
-        await callback.message.edit_text(
-            "✅ Оценка учтена!\n\n"
-            "Хотите найти нового собеседника?",
-            reply_markup=get_main_menu()
-        )
-        
-        await state.clear()
-    except Exception as e:
-        logger.error(f"❌ Ошибка: {e}")
-
 async def handle_cancel_search(callback: CallbackQuery, state: FSMContext):
     """Отменить поиск"""
     global waiting_users
@@ -696,9 +648,9 @@ async def handle_cancel_search(callback: CallbackQuery, state: FSMContext):
             waiting_users[category].remove(user_id)
             logger.info(f"❌ {user_id} отменил поиск в {category}")
         
-        await callback.answer("Поиск отменён")
+        await callback.answer("Поиск отменен")
         await callback.message.edit_text(
-            "Поиск отменён",
+            "Поиск отменен",
             reply_markup=get_main_menu()
         )
         await state.clear()
@@ -766,11 +718,9 @@ async def main():
         dp.callback_query.register(cmd_search, F.data == "search_start")
         dp.callback_query.register(handle_category_selection, F.data.startswith("category_"))
         dp.message.register(handle_chat_message, UserStates.in_chat)
-        dp.callback_query.register(handle_rate_user, F.data == "rate_user")
         dp.callback_query.register(handle_report_user, F.data == "report_user")
         dp.callback_query.register(handle_report_reason, F.data.startswith("report_"))
         dp.callback_query.register(handle_end_chat, F.data == "end_chat")
-        dp.callback_query.register(handle_rating, F.data.startswith("rating_"))
         dp.callback_query.register(handle_cancel_search, F.data == "cancel_search")
         dp.callback_query.register(handle_back_to_menu, F.data == "back_to_menu")
         
@@ -790,7 +740,7 @@ async def main():
         print("  3. Установлены ли все зависимости: pip install -r requirements.txt")
         sys.exit(1)
     finally:
-        logger.info("🛑 Закрытие соединения с ботом...")
+        logger.info("🚪 Закрытие соединения с ботом...")
         await bot.session.close()
 
 
