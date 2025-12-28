@@ -2,6 +2,10 @@ import asyncio
 import logging
 import sys
 import os
+
+# Добавить родительскую директорию в path для импортов
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from aiogram import Bot, Dispatcher, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
@@ -10,13 +14,13 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.filters.command import Command
 
-from bot.config import BOT_TOKEN, DB_PATH
-from bot.database.db import Database
-from bot.keyboards.main import get_main_menu, get_gender_keyboard, get_search_category_keyboard
-from bot.states.user_states import UserStates
-from bot.utils.matching import find_match
-from bot.utils.ban import is_user_banned
-from bot.utils.notifications import notify_match_found, notify_ban
+from config import BOT_TOKEN, DB_PATH
+from database.db import Database
+from keyboards.main import get_main_menu, get_gender_keyboard, get_search_category_keyboard
+from states.user_states import UserStates
+from utils.matching import find_match
+from utils.ban import is_user_banned
+from utils.notifications import notify_match_found, notify_ban
 
 # Configure logging
 logging.basicConfig(
