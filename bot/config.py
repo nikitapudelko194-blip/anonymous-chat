@@ -1,0 +1,60 @@
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Telegram Bot
+BOT_TOKEN = os.getenv('BOT_TOKEN')
+BOT_NAME = 'Anonymous Chat'
+ADMIN_ID = os.getenv('ADMIN_ID', None)
+
+# Database
+DATABASE_URL = 'sqlite:///chat_bot.db'
+DB_PATH = os.getenv('DATABASE_PATH', 'chat_bot.db')
+
+# Подписка
+SUBSCRIPTION_COST_MONTHLY = int(os.getenv('SUBSCRIPTION_COST_MONTHLY', 99))  # Telegram Stars за месяц
+SUBSCRIPTION_COST_LIFETIME = int(os.getenv('SUBSCRIPTION_COST_LIFETIME', 499))  # Telegram Stars навсегда
+
+# Платные функции
+PREMIUM_FEATURES = {
+    'gender_filter': True,
+    'remove_ads': True,
+    'profile_priority': True,
+}
+
+# Системные константы
+MAX_VIOLATIONS = 3  # Количество нарушений перед баном
+MAX_REPORTS_FOR_BAN = 5  # Количество жалоб для автоматического бана
+BAN_DURATION = 7 * 24 * 3600  # 7 дней в секундах
+AUTO_BAN_RESET = 30 * 24 * 3600  # 30 дней для автоматического разбана
+
+# Категории поиска
+CATEGORIES = [
+    ('🎲 Случайный', 'random'),
+    ('👥 По полу', 'gender'),
+    ('❤️ По интересам', 'interests'),
+    ('🎂 По возрасту', 'age'),
+]
+
+# Интересы (примеры)
+INTERESTS = [
+    'IT', 'Спорт', 'Музыка', 'Кино', 'Путешествия',
+    'Готовка', 'Книги', 'Игры', 'Искусство', 'Наука'
+]
+
+# Причины жалоб
+REPORT_REASONS = [
+    ('🚫 Спам', 'spam'),
+    ('😤 Оскорбление', 'abuse'),
+    ('🔞 Неприличный контент', 'inappropriate'),
+    ('😠 Домогательство', 'harassment'),
+    ('❌ Другое', 'other'),
+]
+
+# Полы
+GENDERS = [
+    ('👨 Мужчина', 'male'),
+    ('👩 Женщина', 'female'),
+    ('🤷 Другое', 'other'),
+]
