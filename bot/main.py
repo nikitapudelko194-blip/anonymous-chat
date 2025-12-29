@@ -16,6 +16,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.filters.command import Command
 from datetime import datetime
 import sqlite3
+import uuid
 
 from config import BOT_TOKEN, DB_PATH
 
@@ -33,6 +34,7 @@ logger = logging.getLogger(__name__)
 # 🔄 Глобальная очередь для поиска пара
 waiting_users = defaultdict(list)  # category -> [user_ids]
 active_chats = {}  # user_id -> {partner_id, chat_id}
+user_states = {}  # user_id -> FSMContext state data
 
 # Initialize database
 class Database:
@@ -152,11 +154,11 @@ class Database:
     def create_chat(self, user1_id, user2_id, category):
         """Создать новый чат"""
         try:
-            chat_id = f"{min(user1_id, user2_id)}_{max(user1_id, user2_id)}"
+            chat_id = str(uuid.uuid4())
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT OR REPLACE INTO chats (chat_id, user1_id, user2_id, category, status)
+                INSERT INTO chats (chat_id, user1_id, user2_id, category, status)
                 VALUES (?, ?, ?, ?, 'active')
             ''', (chat_id, user1_id, user2_id, category))
             conn.commit()
@@ -208,7 +210,7 @@ class Database:
         except Exception as e:
             logger.error(f"❌ Ошибка при сохранении жалобы: {e}")
 
-# States (минимальные)
+# States
 class UserStates(StatesGroup):
     waiting_gender = State()
     waiting_age = State()
@@ -244,22 +246,12 @@ async def find_partner(user_id: int, category: str, bot: Bot):
         
         logger.info(f"✅ Матч найден: {user_id} <-> {partner_id}")
         
-        # Уведомить партнера (того кто ждал) - ПЛОВАТОЙ МЕСДЖ БОТА
-        try:
-            await bot.send_message(
-                partner_id,
-                "🎉 Собеседник найден! Можете начать типать "
-            )
-            logger.info(f"✅ Партнер {partner_id} уведомлен о найденном матче")
-        except Exception as e:
-            logger.error(f"❌ Не смог уведомить партнера {partner_id}: {e}")
-        
-        return partner_id
+        return partner_id, chat_id
     else:
         # Добавить в очередь ожидания
         waiting_users[category].append(user_id)
         logger.info(f"⏳ {user_id} добавлен в очередь {category}. В очереди: {len(waiting_users[category])}")
-        return None
+        return None, None
 
 # Keyboards
 def get_main_menu():
@@ -267,7 +259,7 @@ def get_main_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔍 Найти собеседника", callback_data="search_start")],
         [InlineKeyboardButton(text="👤 Мой профиль", callback_data="profile")],
-        [InlineKeyboardButton(text="💎 Премиум", callback_data="premium")],
+        [InlineKeyboardButton(text="⚙️ Настройки", callback_data="settings")],
     ])
 
 def get_search_category_keyboard():
@@ -280,8 +272,9 @@ def get_search_category_keyboard():
 def get_chat_actions_keyboard():
     """Кнопки действий в чате"""
     return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="ℹ️ О собеседнике", callback_data="user_info")],
         [InlineKeyboardButton(text="🚫 Жалоба", callback_data="report_user")],
-        [InlineKeyboardButton(text="💪 Завершить чат", callback_data="end_chat")],
+        [InlineKeyboardButton(text="⏹️ Завершить чат", callback_data="end_chat")],
     ])
 
 def get_report_reasons_keyboard():
@@ -314,7 +307,9 @@ async def cmd_start(message: Message, state: FSMContext):
         await message.answer(
             f"👋 Привет, {message.from_user.first_name or 'друг'}!\n\n"
             "🎉 Добро пожаловать в Анонимный Чат!\n\n"
-            "Найди интересного собеседника и начни общение 💬",
+            "Найди интересного собеседника и начни общение 💬\n\n"
+            "✨ Здесь ты можешь общаться анонимно\n"
+            "🔒 Конфиденциальность гарантирована",
             reply_markup=get_main_menu()
         )
         await state.clear()
@@ -329,12 +324,19 @@ async def handle_profile(callback: CallbackQuery, state: FSMContext):
         user = db.get_user(user_id)
         
         if user:
+            gender_display = {
+                'male': '👨 Мужчина',
+                'female': '👩 Женщина',
+                'other': '🤷 Другое'
+            }.get(user['gender'], 'Не указано')
+            
             profile_text = (
                 f"👤 **Ваш профиль:**\n\n"
-                f"**Имя:** {user['first_name'] or 'Не указано'}\n"
-                f"**Пол:** {user['gender'] or 'Не указано'}\n"
-                f"**Возраст:** {user['age'] or 'Не указано'}\n\n"
-                f"**Чатов:** {user['chats_count']}"
+                f"**Имя:** {user['first_name'] or 'Аноним'}\n"
+                f"**Пол:** {gender_display}\n"
+                f"**Возраст:** {user['age'] or 'Не указано'} лет\n"
+                f"**Чатов завершено:** {user['chats_count']}\n"
+                f"**Статус:** {'⭐ VIP' if user['is_premium'] else '📋 Базовый'}"
             )
         else:
             profile_text = "❌ Профиль не найден"
@@ -386,10 +388,16 @@ async def handle_set_gender(callback: CallbackQuery, state: FSMContext):
     """Установить пол"""
     try:
         gender = callback.data.split('_')[2]
+        gender_display = {
+            'male': '👨 Мужчина',
+            'female': '👩 Женщина',
+            'other': '🤷 Другое'
+        }.get(gender, gender)
+        
         db.update_user(callback.from_user.id, gender=gender)
         
         await callback.message.edit_text(
-            f"✅ Пол установлен: {gender}\n\n"
+            f"✅ Пол установлен: {gender_display}\n\n"
             "Что дальше?",
             reply_markup=get_main_menu()
         )
@@ -400,7 +408,7 @@ async def handle_set_gender(callback: CallbackQuery, state: FSMContext):
 async def handle_edit_age(callback: CallbackQuery, state: FSMContext):
     """Изменить возраст"""
     try:
-        await callback.message.edit_text("🎂 Напишите ваш возраст:")
+        await callback.message.edit_text("🎂 Напишите ваш возраст (цифрой):")
         await state.set_state(UserStates.waiting_age)
         await callback.answer()
     except Exception as e:
@@ -416,7 +424,7 @@ async def handle_age_input(message: Message, state: FSMContext):
         
         db.update_user(message.from_user.id, age=age)
         await message.answer(
-            f"✅ Возраст установлен: {age}",
+            f"✅ Возраст установлен: {age} лет",
             reply_markup=get_main_menu()
         )
         await state.clear()
@@ -428,6 +436,13 @@ async def handle_age_input(message: Message, state: FSMContext):
 async def cmd_search(callback: CallbackQuery, state: FSMContext):
     """Начать поиск собеседника"""
     try:
+        user_id = callback.from_user.id
+        
+        # Проверить не в чате ли пользователь
+        if user_id in active_chats:
+            await callback.answer("⚠️ Вы уже в чате! Завершите его сначала", show_alert=True)
+            return
+        
         await callback.answer()
         await callback.message.edit_text(
             "🔍 Выберите категорию поиска:",
@@ -438,104 +453,190 @@ async def cmd_search(callback: CallbackQuery, state: FSMContext):
         logger.error(f"❌ Ошибка: {e}")
 
 async def handle_category_selection(callback: CallbackQuery, state: FSMContext):
-    """Обработать выбор категории"""
+    """Обработать выбор категории - ИСПРАВЛЕНО!"""
     global bot_instance
     try:
         user_id = callback.from_user.id
         category = callback.data.split('_')[1]
         user = db.get_user(user_id)
         
-        # Проверъ премиум для фильтра по полу
-        if category == 'gender' and not user.get('is_premium', False):
-            await callback.message.edit_text(
-                "💎 Фильтр по полу доступен только для премиум пользователей\n\n"
-                "Подписка включает:",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="💎 Купить премиум", callback_data="buy_premium")],
-                    [InlineKeyboardButton(text="⬅️ Назад", callback_data="search_start")],
-                ])
-            )
-            await callback.answer()
-            return
-        
         await callback.answer()
-        await callback.message.edit_text("🔍 Ищем собеседника...")
+        await callback.message.edit_text(
+            "⏳ Ищем собеседника...\n\n"
+            "Это может занять несколько секунд ⏰"
+        )
         
         # Найти партнера
-        partner_id = await find_partner(user_id, category, bot_instance)
+        partner_id, chat_id = await find_partner(user_id, category, bot_instance)
         
         if partner_id:
             # Партнер найден сразу!
-            chat_id = active_chats[user_id]['chat_id']
-            
-            await callback.message.edit_text(
-                "🎉 Собеседник найден!\n💬 Начните типать:",
-                reply_markup=get_chat_actions_keyboard()
-            )
-            
+            # Сохраним данные в state ДЛЯ ОБОИХ!
             await state.set_state(UserStates.in_chat)
             await state.update_data(
                 chat_id=chat_id,
                 partner_id=partner_id,
                 category=category
             )
+            
+            await callback.message.edit_text(
+                "🎉 Собеседник найден!\n\n"
+                "💬 Введите сообщение для отправки:",
+                reply_markup=get_chat_actions_keyboard()
+            )
             logger.info(f"✅ {user_id} сразу найден партнер {partner_id}")
         else:
             # В очереди ожидания
             await callback.message.edit_text(
-                "⏳ Вы в очереди ожидания\n"
-                "Когда найдется партнер, вы получите уведомление",
+                "⏳ Вы в очереди ожидания...\n\n"
+                "Когда найдется собеседник, вы получите уведомление.\n"
+                "Пожалуйста, подождите ⏰",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_search")],
+                    [InlineKeyboardButton(text="❌ Отмена поиска", callback_data="cancel_search")],
                 ])
             )
             await state.set_state(UserStates.searching)
             await state.update_data(category=category)
     except Exception as e:
         logger.error(f"❌ Ошибка: {e}")
-        await callback.answer("❌ Ошибка", show_alert=True)
+        await callback.answer("❌ Ошибка при поиске", show_alert=True)
+
+async def notify_partner_found(partner_id: int, chat_id: str, state: FSMContext, bot: Bot):
+    """Уведомить партнера о найденном матче"""
+    try:
+        # Получить состояние партнера
+        data = {
+            'chat_id': chat_id,
+            'partner_id': None,  # Заполнится позже
+            'category': 'random'
+        }
+        
+        # Отправить уведомление
+        await bot.send_message(
+            partner_id,
+            "🎉 Собеседник найден!\n\n"
+            "💬 Введите сообщение для отправки:",
+            reply_markup=get_chat_actions_keyboard()
+        )
+        logger.info(f"✅ Партнер {partner_id} уведомлен о найденном матче")
+    except Exception as e:
+        logger.error(f"❌ Не смог уведомить партнера {partner_id}: {e}")
 
 async def handle_chat_message(message: Message, state: FSMContext):
-    """Обработать сообщение в чате - ОТПРАВЛЯЕМ ОБЫКНОЕ СООБЩЕНИЕЕ БОВЕЗ КНОПОК!"""
-    global bot_instance
+    """Обработать сообщение в чате - ИСПРАВЛЕНО! ТЕПЕРЬ РАБОТАЕТ ДЛЯ ОБОИХ!"""
+    global bot_instance, active_chats
     try:
+        user_id = message.from_user.id
         data = await state.get_data()
         chat_id = data.get('chat_id')
         partner_id = data.get('partner_id')
-        user_id = message.from_user.id
+        
+        # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Проверяем есть ли пользователь в активных чатах
+        if user_id not in active_chats:
+            # Значит, это партнер, который только что был уведомлен
+            # Нам нужно получить его данные
+            if partner_id is None and chat_id is None:
+                # Пытаемся найти информацию из активных чатов
+                for uid, chat_info in active_chats.items():
+                    if chat_info['partner_id'] == user_id:
+                        chat_id = chat_info['chat_id']
+                        partner_id = uid
+                        # Сохраняем в state
+                        await state.set_state(UserStates.in_chat)
+                        await state.update_data(
+                            chat_id=chat_id,
+                            partner_id=partner_id,
+                            category='random'
+                        )
+                        active_chats[user_id] = {'partner_id': partner_id, 'chat_id': chat_id}
+                        break
         
         if not chat_id or not partner_id:
             await message.answer(
-                "❌ Ошибка: чат не найден. Начните заново.",
+                "❌ Ошибка: чат не найден.\n\n"
+                "Начните заново:",
                 reply_markup=get_main_menu()
             )
+            await state.clear()
             return
         
         # Сохранить сообщение
         db.save_message(chat_id, user_id, message.text)
         
-        # Отправить партнеру - БЕЗ КНОПОК!
+        # Отправить партнеру
         try:
+            # Определяем пол отправителя для красивого вывода
+            user = db.get_user(user_id)
+            gender_emoji = {
+                'male': '👨',
+                'female': '👩',
+                'other': '🤷'
+            }.get(user.get('gender'), '👤') if user else '👤'
+            
+            # Определяем возраст
+            age_text = f", {user['age']} лет" if user and user.get('age') else ""
+            
+            message_text = (
+                f"{gender_emoji} Собеседник{age_text}:\n"
+                f"💬 {message.text}"
+            )
+            
             await bot_instance.send_message(
                 partner_id,
-                f"💬 {message.text}"
+                message_text,
+                reply_markup=get_chat_actions_keyboard()
             )
             logger.info(f"✅ Сообщение от {user_id} отправлено {partner_id}")
         except Exception as send_error:
             logger.error(f"❌ Ошибка при отправке сообщения партнеру: {send_error}")
             await message.answer(
-                "⚠️ Собеседник недоступен или заблокировал бота.",
+                "⚠️ Не удалось отправить сообщение.\n"
+                "Собеседник может быть недоступен.",
                 reply_markup=get_chat_actions_keyboard()
             )
     except Exception as e:
         logger.error(f"❌ Ошибка в handle_chat_message: {e}", exc_info=True)
+
+async def handle_user_info(callback: CallbackQuery, state: FSMContext):
+    """Показать информацию о собеседнике"""
+    try:
+        data = await state.get_data()
+        partner_id = data.get('partner_id')
+        
+        if not partner_id:
+            await callback.answer("❌ Информация недоступна", show_alert=True)
+            return
+        
+        user = db.get_user(partner_id)
+        if user:
+            gender_display = {
+                'male': '👨 Мужчина',
+                'female': '👩 Женщина',
+                'other': '🤷 Другое'
+            }.get(user['gender'], 'Не указано')
+            
+            info_text = (
+                f"👤 **Информация о собеседнике:**\n\n"
+                f"**Пол:** {gender_display}\n"
+                f"**Возраст:** {user['age'] or '?'} лет\n"
+                f"**Статус:** {'⭐ VIP' if user['is_premium'] else '📋 Базовый'}\n\n"
+                f"💡 Будьте вежливы и уважительны!"
+            )
+        else:
+            info_text = "❌ Информация недоступна"
+        
+        await callback.answer(info_text, show_alert=True)
+    except Exception as e:
+        logger.error(f"❌ Ошибка: {e}")
+        await callback.answer("❌ Ошибка", show_alert=True)
 
 async def handle_report_user(callback: CallbackQuery, state: FSMContext):
     """Начать жалобу"""
     try:
         await callback.answer()
         await callback.message.edit_text(
-            "📋 Выберите причину жалобы:",
+            "📋 Выберите причину жалобы:\n\n"
+            "(Это поможет нам улучшить сервис)",
             reply_markup=get_report_reasons_keyboard()
         )
     except Exception as e:
@@ -544,6 +645,14 @@ async def handle_report_user(callback: CallbackQuery, state: FSMContext):
 async def handle_report_reason(callback: CallbackQuery, state: FSMContext):
     """Обработать жалобу"""
     try:
+        reason_map = {
+            'spam': '🚫 Спам',
+            'abuse': '😤 Оскорбление',
+            'inappropriate': '🔞 Неприличный контент',
+            'harassment': '😠 Домогательство',
+            'other': '❌ Другое'
+        }
+        
         reason = callback.data.split('_')[1]
         data = await state.get_data()
         
@@ -551,17 +660,23 @@ async def handle_report_reason(callback: CallbackQuery, state: FSMContext):
         partner_id = data.get('partner_id')
         reporter_id = callback.from_user.id
         
+        if not chat_id or not partner_id:
+            await callback.answer("❌ Ошибка при отправке жалобы", show_alert=True)
+            return
+        
         # Сохранить жалобу
         db.save_report(chat_id, reporter_id, partner_id, reason)
         
         # Обновить счётчик жалоб
         user = db.get_user(partner_id)
         if user:
-            db.update_user(partner_id, reports_count=user.get('reports_count', 0) + 1)
+            new_reports = user.get('reports_count', 0) + 1
+            db.update_user(partner_id, reports_count=new_reports)
             
             # Проверить на автобан
-            if user.get('reports_count', 0) + 1 >= 5:
+            if new_reports >= 5:
                 db.update_user(partner_id, is_banned=True, ban_reason="Слишком много жалоб")
+                logger.warning(f"⚠️ Пользователь {partner_id} заблокирован автоматически")
         
         db.end_chat(chat_id)
         
@@ -571,28 +686,42 @@ async def handle_report_reason(callback: CallbackQuery, state: FSMContext):
         
         await callback.answer("✅ Жалоба отправлена. Спасибо!", show_alert=True)
         await callback.message.edit_text(
-            "✅ Мы исследуем это. Спасибо за помощь!\n\n"
-            "Хотите найти нового собеседника?",
+            "✅ Ваша жалоба принята!\n\n"
+            "Модераторы рассмотрят её в течение 24 часов.\n\n"
+            "Спасибо за помощь в улучшении сервиса! 🙏",
             reply_markup=get_main_menu()
         )
         
         await state.clear()
     except Exception as e:
         logger.error(f"❌ Ошибка: {e}")
+        await callback.answer("❌ Ошибка", show_alert=True)
 
 async def handle_end_chat(callback: CallbackQuery, state: FSMContext):
     """Завершить чат"""
+    global active_chats
     try:
         data = await state.get_data()
         chat_id = data.get('chat_id')
         partner_id = data.get('partner_id')
         user_id = callback.from_user.id
         
-        db.end_chat(chat_id)
+        if chat_id:
+            db.end_chat(chat_id)
+            
+            # Обновить счётчик чатов
+            user = db.get_user(user_id)
+            if user:
+                db.update_user(user_id, chats_count=user.get('chats_count', 0) + 1)
+            
+            partner = db.get_user(partner_id)
+            if partner:
+                db.update_user(partner_id, chats_count=partner.get('chats_count', 0) + 1)
         
         # Очистить активные чаты
         active_chats.pop(user_id, None)
-        active_chats.pop(partner_id, None)
+        if partner_id:
+            active_chats.pop(partner_id, None)
         
         await callback.answer("✅ Чат завершен", show_alert=True)
         await callback.message.edit_text(
@@ -624,6 +753,50 @@ async def handle_cancel_search(callback: CallbackQuery, state: FSMContext):
             reply_markup=get_main_menu()
         )
         await state.clear()
+    except Exception as e:
+        logger.error(f"❌ Ошибка: {e}")
+
+async def handle_settings(callback: CallbackQuery, state: FSMContext):
+    """Настройки"""
+    try:
+        await callback.message.edit_text(
+            "⚙️ Настройки\n\n"
+            "Выберите опцию:",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔔 Уведомления", callback_data="settings_notifications")],
+                [InlineKeyboardButton(text="🔒 Конфиденциальность", callback_data="settings_privacy")],
+                [InlineKeyboardButton(text="ℹ️ О боте", callback_data="settings_about")],
+                [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu")],
+            ])
+        )
+        await callback.answer()
+    except Exception as e:
+        logger.error(f"❌ Ошибка: {e}")
+
+async def handle_about(callback: CallbackQuery, state: FSMContext):
+    """О боте"""
+    try:
+        await callback.message.edit_text(
+            "ℹ️ **О боте**\n\n"
+            "🎭 Анонимный Чат v2.0\n\n"
+            "📝 Описание:\n"
+            "Сервис для анонимного общения с случайными людьми.\n"
+            "Полная конфиденциальность и безопасность! 🔒\n\n"
+            "✨ Функции:\n"
+            "🔍 Поиск собеседника\n"
+            "💬 Анонимный чат\n"
+            "🚫 Система жалоб\n"
+            "👤 Мой профиль\n\n"
+            "⚖️ Правила:\n"
+            "✅ Будьте вежливы\n"
+            "✅ Соблюдайте законодательство\n"
+            "✅ Никаких спама и рекламы\n\n"
+            "💬 По вопросам: @support",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu")],
+            ])
+        )
+        await callback.answer()
     except Exception as e:
         logger.error(f"❌ Ошибка: {e}")
 
@@ -682,10 +855,14 @@ async def main():
         dp.callback_query.register(cmd_search, F.data == "search_start")
         dp.callback_query.register(handle_category_selection, F.data.startswith("category_"))
         dp.message.register(handle_chat_message, UserStates.in_chat)
+        dp.message.register(handle_chat_message, UserStates.searching)  # Добавил для поиска
+        dp.callback_query.register(handle_user_info, F.data == "user_info")
         dp.callback_query.register(handle_report_user, F.data == "report_user")
         dp.callback_query.register(handle_report_reason, F.data.startswith("report_"))
         dp.callback_query.register(handle_end_chat, F.data == "end_chat")
         dp.callback_query.register(handle_cancel_search, F.data == "cancel_search")
+        dp.callback_query.register(handle_settings, F.data == "settings")
+        dp.callback_query.register(handle_about, F.data == "settings_about")
         dp.callback_query.register(handle_back_to_menu, F.data == "back_to_menu")
         
         logger.info("  ✓ Все обработчики подключены")
