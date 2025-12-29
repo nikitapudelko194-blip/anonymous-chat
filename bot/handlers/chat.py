@@ -1,13 +1,22 @@
-from aiogram import Router, F, types
+from aiogram import Router, F, types, Bot
 from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from states.user_states import UserStates
 from utils.matching import find_match, remove_from_queue, get_queue_size
 from utils.notifications import notify_match_found
+from keyboards.main import (
+    main_menu_kb, search_category_kb, chat_menu_kb,
+    report_reason_kb, searching_kb
+)
 from database.db import Database
+from config import BOT_TOKEN
 
 router = Router()
 db = Database()
+bot = Bot(token=BOT_TOKEN)
+
+# Глобальные ссылки на последние сообщения (для редактирования)
+last_messages = {}  # {user_id: {other_user: message_id}}
 
 @router.callback_query(F.data == 'start_search')
 async def start_search(
@@ -20,25 +29,28 @@ async def start_search(
     
     if user['is_banned']:
         await callback.answer(
-            "❌ Вы заблокированы. Разблокируйтесь через премиум подписку",
+            "❌ Вы заблокированы. Разблокируйтесь через 💎 premium",
             show_alert=True
         )
         return
     
     await callback.answer()
-    
-    # Выбор категории
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎲 Случайный", callback_data="category_random")],
-        [InlineKeyboardButton(text="👥 По полу", callback_data="category_gender")],
-    ])
-    
     await callback.message.edit_text(
-        "🔍 Выберите способ поиска собеседника:",
-        reply_markup=kb
+        "🔍 Выберите способ поиска:",
+        reply_markup=search_category_kb()
     )
     
     await state.set_state(UserStates.choosing_category)
+
+@router.callback_query(F.data == 'main_menu')
+async def main_menu(callback: types.CallbackQuery, state: FSMContext):
+    """Вернуться в меню."""
+    await callback.answer()
+    await callback.message.edit_text(
+        "🎉 <b>Anonymous Chat</b>\n\nПривет! Конфиденциальные беседы на любые темы.",
+        reply_markup=main_menu_kb()
+    )
+    await state.set_state(UserStates.main_menu)
 
 @router.callback_query(F.data.startswith('category_'))
 async def select_category(
@@ -52,32 +64,33 @@ async def select_category(
     
     user = await db.get_user(callback.from_user.id)
     
-    # Для фильтра по полу нужна премиум подписка
+    # Проверка премиум для гендерного фильтра
     if category == 'gender' and not user['is_premium']:
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💎 Купить премиум", callback_data="buy_premium")],
-            [InlineKeyboardButton(text="⬅️ Назад", callback_data="start_search")],
+            [InlineKeyboardButton(text="💎 Купить premium", callback_data="buy_premium")],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="main_menu")],
         ])
         
         await callback.message.edit_text(
-            "💎 Фильтр по полу доступен только для премиум пользователей\n\n"
-            "Получите доступ к:\n"
-            "✨ Выбору пола собеседника\n"
-            "✨ Удалению рекламы\n"
-            "✨ Приоритету в поиске",
+            "💎 <b>Premium функция</b>\n\n"
+            "Фильтр по полу доступен только для:\n"
+            "✨ Premium подписчиков",
             reply_markup=kb
         )
         return
     
-    # Начать поиск
     await callback.answer()
-    await callback.message.edit_text("🔍 Ищем собеседника...")
+    await callback.message.edit_text(
+        "⏳ <b>Поиск собеседника...</b>\n\n"
+        "Пожалуйста, подождите...\n",
+        reply_markup=searching_kb()
+    )
     
     gender_filter = None
     if category == 'gender':
         gender_filter = user['gender']
     
-    # Найти матч ЧЕРЕЗ ОЧЕРЕДЬ
+    # Поиск матча через очередь
     match_id = await find_match(
         callback.from_user.id,
         category,
@@ -85,15 +98,14 @@ async def select_category(
     )
     
     if not match_id:
-        # Пользователь добавлен в очередь - ждем
+        # Пользователь добавлен в очередь
         queue_size = get_queue_size(category, gender_filter)
-        await callback.message.edit_text(
-            f"⏳ Поиск собеседника...\n\n"
-            f"В очереди: {queue_size} человек\n\n"
-            f"Отменить: /cancel"
-        )
         await state.set_state(UserStates.searching)
-        await state.update_data(searching_category=category, searching_gender=gender_filter)
+        await state.update_data(
+            searching_category=category,
+            searching_gender=gender_filter,
+            search_message_id=callback.message.message_id
+        )
         return
     
     # ✅ МАТЧ НАЙДЕН!
@@ -104,116 +116,254 @@ async def select_category(
     user1_profile = user
     user2_profile = await db.get_user(match_id)
     
-    await notify_match_found(
-        callback.from_user.id,
-        match_id,
-        user1_profile,
-        user2_profile
+    # Отредактировать на для текущего
+    await callback.message.edit_text(
+        "🎉 <b>Собеседник найден!</b>\n\n"
+        f"👤 <b>{user2_profile.get('first_name', 'Аноним')}</b>, {user2_profile.get('age', '?')} лет\n"
+        f"🐐 Пол: {'👨' if user2_profile.get('gender') == 'male' else '👩' if user2_profile.get('gender') == 'female' else '🙀'}\n\n"
+        "💬 Можете начинать написывать сообщения:\n\n"
+        "/stop - завершить\n"
+        "/new - новый чат\n"
+        "/report - репорт",
+        reply_markup=chat_menu_kb()
     )
     
-    # НАЧАТЬ ЧАТ для обоих
-    await callback.message.edit_text(
-        f"🎉 Собеседник найден!\n\n"
-        f"👤 {user2_profile['first_name']}, {user2_profile['age']} лет\n\n"
-        f"💬 Можете начать писать сообщения\n\n"
-        f"Командировка: /stop или /report"
-    )
+    # Уведомить второго
+    try:
+        msg = await bot.send_message(
+            match_id,
+            "🎉 <b>Собеседник найден!</b>\n\n"
+            f"👤 <b>{user1_profile.get('first_name', 'Аноним')}</b>, {user1_profile.get('age', '?')} лет\n"
+            f"🐐 Пол: {'👨' if user1_profile.get('gender') == 'male' else '👩' if user1_profile.get('gender') == 'female' else '🙀'}\n\n"
+            "💬 Можете начинать написывать сообщения:\n\n"
+            "/stop - завершить\n"
+            "/new - новый чат\n"
+            "/report - репорт",
+            reply_markup=chat_menu_kb()
+        )
+        last_messages[match_id] = {callback.from_user.id: msg.message_id}
+    except Exception as e:
+        print(f"❌ Ошибка стартовых сообщений: {e}")
     
     await state.set_state(UserStates.in_chat)
-    await state.update_data(current_chat=chat_id, other_user=match_id)
+    await state.update_data(
+        current_chat=chat_id,
+        other_user=match_id,
+        my_user_id=callback.from_user.id
+    )
 
-@router.message(UserStates.searching)
-async def cancel_search(
-    message: types.Message,
-    state: FSMContext
-):
-    """Отменить поиск собеседника."""
+@router.callback_query(F.data == 'cancel_search')
+async def cancel_search(callback: types.CallbackQuery, state: FSMContext):
+    """Отменить поиск."""
+    data = await state.get_data()
+    category = data.get('searching_category')
+    gender_filter = data.get('searching_gender')
     
-    if message.text == '/cancel':
-        data = await state.get_data()
-        category = data.get('searching_category')
-        gender_filter = data.get('searching_gender')
-        
-        await remove_from_queue(message.from_user.id, category, gender_filter)
-        await message.answer("❌ Поиск отменен")
-        await state.clear()
+    await remove_from_queue(callback.from_user.id, category, gender_filter)
+    
+    await callback.answer()
+    await callback.message.edit_text(
+        "🎉 <b>Anonymous Chat</b>\n\nПривет! Конфиденциальные беседы на любые темы.",
+        reply_markup=main_menu_kb()
+    )
+    await state.set_state(UserStates.main_menu)
 
 @router.message(UserStates.in_chat)
 async def handle_chat_message(
     message: types.Message,
     state: FSMContext
 ):
-    """Обработать сообщение в чате."""
+    """Обработать сообщения в чате и команды."""
     
-    if message.text in ['/stop', '/report']:
-        if message.text == '/stop':
-            await handle_stop_chat(message, state)
-        elif message.text == '/report':
-            await start_report(message, state)
+    # Команды
+    if message.text == '/stop':
+        await stop_chat(message, state)
+        return
+    elif message.text == '/new':
+        await new_chat(message, state)
+        return
+    elif message.text == '/report':
+        await start_report(message, state)
         return
     
     data = await state.get_data()
     chat_id = data['current_chat']
     other_user = data['other_user']
+    my_user_id = data['my_user_id']
+    
+    # Не отправлять пустые сообщения
+    if not message.text or message.text.startswith('/'):
+        return
     
     # 💾 Сохранить сообщение
-    await db.save_message(
-        chat_id=chat_id,
-        sender_id=message.from_user.id,
-        receiver_id=other_user,
-        content=message.text
-    )
+    try:
+        await db.save_message(
+            chat_id=chat_id,
+            sender_id=my_user_id,
+            receiver_id=other_user,
+            content=message.text
+        )
+    except Exception as e:
+        print(f"❌ Ошибка сохранения: {e}")
     
     # 📤 Отправить собеседнику БЕЗ КНОПОК
     try:
-        await message.bot.send_message(
-            other_user,
-            f"💬 {message.text}"
-        )
+        # Ялка для редактирования последнего сообщения
+        if other_user in last_messages and my_user_id in last_messages[other_user]:
+            # Грруппировать сообщения в одно
+            msg_id = last_messages[other_user][my_user_id]
+            try:
+                await bot.edit_message_text(
+                    chat_id=other_user,
+                    message_id=msg_id,
+                    text=f"💬 <i>{message.text}</i>",
+                    parse_mode="HTML"
+                )
+            except:
+                # Если не удалось редактировать - отправим новое
+                msg = await bot.send_message(
+                    other_user,
+                    f"💬 <i>{message.text}</i>",
+                    parse_mode="HTML"
+                )
+                if other_user not in last_messages:
+                    last_messages[other_user] = {}
+                last_messages[other_user][my_user_id] = msg.message_id
+        else:
+            # Первое сообщение
+            msg = await bot.send_message(
+                other_user,
+                f"💬 <i>{message.text}</i>",
+                parse_mode="HTML"
+            )
+            if other_user not in last_messages:
+                last_messages[other_user] = {}
+            last_messages[other_user][my_user_id] = msg.message_id
     except Exception as e:
-        print(f"❌ Ошибка при отправке сообщения {other_user}: {e}")
+        print(f"❌ Ошибка сенд: {e}")
 
-async def handle_stop_chat(
-    message: types.Message,
-    state: FSMContext
-):
+async def stop_chat(message: types.Message, state: FSMContext):
     """Завершить чат."""
-    
     data = await state.get_data()
     chat_id = data['current_chat']
     other_user = data['other_user']
     
     # Уведомить партнера
     try:
-        await message.bot.send_message(
+        await bot.send_message(
             other_user,
-            "❌ Собеседник завершил чат"
+            "🖤 <b>Собеседник завершил чат</b>",
+            parse_mode="HTML"
         )
     except:
         pass
     
-    # Завершить чат
-    await db.end_chat(chat_id)
-    await message.answer("✅ Чат завершен")
-    await state.clear()
-
-async def start_report(
-    message: types.Message,
-    state: FSMContext
-):
-    """Начать жалобу на пользователя."""
+    # Цочистить стек
+    if other_user in last_messages:
+        del last_messages[other_user]
     
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🚫 Спам", callback_data="report_spam")],
-        [InlineKeyboardButton(text="😤 Оскорбление", callback_data="report_abuse")],
-        [InlineKeyboardButton(text="🔞 Неприличный контент", callback_data="report_inappropriate")],
-        [InlineKeyboardButton(text="😠 Домогательство", callback_data="report_harassment")],
-        [InlineKeyboardButton(text="❌ Другое", callback_data="report_other")],
-    ])
+    # Закончить чат
+    await db.end_chat(chat_id)
     
     await message.answer(
-        "📋 Выберите причину жалобы:",
-        reply_markup=kb
+        "🎉 <b>Anonymous Chat</b>\n\nПривет! Конфиденциальные беседы на любые темы.",
+        reply_markup=main_menu_kb(),
+        parse_mode="HTML"
+    )
+    await state.set_state(UserStates.main_menu)
+
+async def new_chat(message: types.Message, state: FSMContext):
+    """Начать новый чат."""
+    data = await state.get_data()
+    chat_id = data['current_chat']
+    other_user = data['other_user']
+    
+    # Завершить текущий
+    try:
+        await bot.send_message(
+            other_user,
+            "🖤 <b>Собеседник запросил новый чат</b>",
+            parse_mode="HTML"
+        )
+    except:
+        pass
+    
+    # Цочистить
+    if other_user in last_messages:
+        del last_messages[other_user]
+    
+    await db.end_chat(chat_id)
+    await message.answer(
+        "⏳ <b>Поиск нового собеседника...</b>\n\nПожалуйста, подождите...",
+        reply_markup=searching_kb(),
+        parse_mode="HTML"
+    )
+    
+    # Начать новый поиск
+    data = await state.get_data()
+    category = data.get('category', 'random')
+    gender_filter = data.get('searching_gender')
+    
+    user = await db.get_user(message.from_user.id)
+    if category == 'gender':
+        gender_filter = user['gender']
+    
+    match_id = await find_match(
+        message.from_user.id,
+        category,
+        gender_filter=gender_filter
+    )
+    
+    if not match_id:
+        # В очереди
+        await state.set_state(UserStates.searching)
+        return
+    
+    # Матч принят в /new_chat исполнения
+    chat_id = f"{message.from_user.id}_{match_id}"
+    await db.create_chat(message.from_user.id, match_id, category)
+    
+    user1_profile = user
+    user2_profile = await db.get_user(match_id)
+    
+    await message.answer(
+        "🎉 <b>Собеседник найден!</b>\n\n"
+        f"👤 <b>{user2_profile.get('first_name', 'Аноним')}</b>, {user2_profile.get('age', '?')} лет\n"
+        f"🐐 Пол: {'👨' if user2_profile.get('gender') == 'male' else '👩' if user2_profile.get('gender') == 'female' else '🙀'}\n\n"
+        "💬 Можете начинать написывать сообщения:",
+        reply_markup=chat_menu_kb(),
+        parse_mode="HTML"
+    )
+    
+    # Уведомить второго
+    try:
+        msg = await bot.send_message(
+            match_id,
+            "🎉 <b>Собеседник найден!</b>\n\n"
+            f"👤 <b>{user1_profile.get('first_name', 'Аноним')}</b>, {user1_profile.get('age', '?')} лет\n"
+            f"🐐 Пол: {'👨' if user1_profile.get('gender') == 'male' else '👩' if user1_profile.get('gender') == 'female' else '🙀'}\n\n"
+            "💬 Можете начинать написывать сообщения:",
+            reply_markup=chat_menu_kb(),
+            parse_mode="HTML"
+        )
+        last_messages[match_id] = {message.from_user.id: msg.message_id}
+    except:
+        pass
+    
+    await state.set_state(UserStates.in_chat)
+    await state.update_data(
+        current_chat=chat_id,
+        other_user=match_id,
+        my_user_id=message.from_user.id
+    )
+
+async def start_report(message: types.Message, state: FSMContext):
+    """Начать репорт."""
+    
+    await message.answer(
+        "📋 <b>Выберите причину репорта:</b>",
+        reply_markup=report_reason_kb(),
+        parse_mode="HTML"
     )
     
     await state.set_state(UserStates.report_reason)
@@ -223,7 +373,7 @@ async def handle_report_reason(
     callback: types.CallbackQuery,
     state: FSMContext
 ):
-    """Обработать жалобу."""
+    """Обработать репорт."""
     
     reason = callback.data.split('_')[1]
     data = await state.get_data()
@@ -231,7 +381,7 @@ async def handle_report_reason(
     chat_id = data['current_chat']
     reported_user_id = data['other_user']
     
-    # Сохранить жалобу
+    # Сохранить репорт
     await db.create_report(
         chat_id=chat_id,
         reporter_id=callback.from_user.id,
@@ -239,7 +389,7 @@ async def handle_report_reason(
         reason=reason
     )
     
-    # Инкрементировать счетчик жалоб
+    # Инкрементировать
     await db.increment_reports(reported_user_id)
     
     # Проверить бан
@@ -250,12 +400,19 @@ async def handle_report_reason(
         from utils.notifications import notify_ban
         await notify_ban(
             reported_user_id,
-            "Слишком много жалоб от других пользователей",
+            "Слишком много репортов",
             "через 7 дней"
         )
     
-    await callback.answer("✅ Жалоба отправлена", show_alert=True)
+    await callback.answer("✅ Присравка сыра", show_alert=True)
     
-    # Закончить чат
+    # Завершить чат
     await db.end_chat(chat_id)
-    await state.clear()
+    
+    await callback.message.edit_text(
+        "🎉 <b>Anonymous Chat</b>\n\nПривет! Конфиденциальные беседы на любые темы.",
+        reply_markup=main_menu_kb(),
+        parse_mode="HTML"
+    )
+    
+    await state.set_state(UserStates.main_menu)
