@@ -482,6 +482,18 @@ async def cmd_search(callback: CallbackQuery, state: FSMContext):
         partner_id, chat_id = await find_partner(user_id, 'random', {}, bot_instance)
         
         if partner_id:
+            # ✅ ВАЖНО: ОТПРАВИТЬ УВЕДОМЛЕНИЕ ПАРТНЁРУ!
+            try:
+                await bot_instance.send_message(
+                    partner_id,
+                    "🎉 **Собеседник найден!**\n\n"
+                    "💬 Введите сообщение и отправьте его:",
+                    reply_markup=get_chat_actions_keyboard()
+                )
+                logger.info(f"✅ Партнёр {partner_id} уведомлен")
+            except Exception as e:
+                logger.error(f"❌ Ошибка при уведомлении партнёра: {e}")
+            
             await state.set_state(UserStates.in_chat)
             await state.update_data(chat_id=chat_id, partner_id=partner_id, category='random')
             
@@ -492,7 +504,7 @@ async def cmd_search(callback: CallbackQuery, state: FSMContext):
             )
         else:
             await callback.message.edit_text(
-                "⏳ **Вы в очереди ожидания...**\n\n"
+                "⏳ **Вы в очереди ожидания...\n\n"
                 "Когда найдется собеседник, вы получите уведомление.\n"
                 "Пожалуйста, подождите ⏰",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -539,6 +551,18 @@ async def handle_search_filter(callback: CallbackQuery, state: FSMContext):
         partner_id, chat_id = await find_partner(user_id, 'gender', search_filters, bot_instance)
         
         if partner_id:
+            # ✅ ОТПРАВИТЬ УВЕДОМЛЕНИЕ ПАРТНЁРУ!
+            try:
+                await bot_instance.send_message(
+                    partner_id,
+                    "🎉 **Собеседник найден!**\n\n"
+                    "💬 Введите сообщение и отправьте его:",
+                    reply_markup=get_chat_actions_keyboard()
+                )
+                logger.info(f"✅ Партнёр {partner_id} уведомлен")
+            except Exception as e:
+                logger.error(f"❌ Ошибка при уведомлении партнёра: {e}")
+            
             await state.set_state(UserStates.in_chat)
             await state.update_data(chat_id=chat_id, partner_id=partner_id, category='gender', filters=search_filters)
             
@@ -549,7 +573,7 @@ async def handle_search_filter(callback: CallbackQuery, state: FSMContext):
             )
         else:
             await callback.message.edit_text(
-                "⏳ **Вы в очереди ожидания...**\n\n"
+                "⏳ **Вы в очереди ожидания...\n\n"
                 "Когда найдется собеседник, вы получите уведомление.",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_search")],
@@ -825,7 +849,7 @@ async def handle_help(callback: CallbackQuery, state: FSMContext):
             "`/interests` - выбрать интересы\n"
             "`/settings` - настройки\n"
             "`/rules` - правила чата\n\n"
-            "По вопросам: @AnonBotAdmin",
+            "💬 Вопросы и предложения приветствуются!",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu")],
             ])
