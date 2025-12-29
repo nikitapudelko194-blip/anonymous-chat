@@ -1,109 +1,68 @@
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
-from bot.config import GENDERS, INTERESTS, REPORT_REASONS, CATEGORIES
+from aiogram.types import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    ReplyKeyboardMarkup,
+    KeyboardButton
+)
 
-
-def get_main_menu() -> InlineKeyboardMarkup:
-    """
-    Основное меню.
-    """
+# МЕНЮ (Поовветствующие кнопки)
+def main_menu_kb():
+    """AnonRuBot style main menu."""
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔍 Поиск собеседника", callback_data="search_start")],
-        [InlineKeyboardButton(text="👤 Мой профиль", callback_data="profile_view")],
-        [InlineKeyboardButton(text="💳 Премиум", callback_data="premium_info")],
-        [InlineKeyboardButton(text="📊 Моя статистика", callback_data="stats_view")],
-        [InlineKeyboardButton(text="❓ Помощь", callback_data="help_info")],
+        [InlineKeyboardButton(text="🎲 Найти собеседника", callback_data="start_search")],
+        [InlineKeyboardButton(text="💎 Премиум (тест)", callback_data="buy_premium")],
+        [InlineKeyboardButton(text="⚖️ Правила", callback_data="rules")],
     ])
 
-
-def get_gender_keyboard() -> InlineKeyboardMarkup:
-    """
-    Клавиатура выбора пола.
-    """
+def search_category_kb():
+    """Choose search category (2 only like AnonRuBot)."""
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=gender[0], callback_data=f"gender_{gender[1]}") for gender in GENDERS]
+        [InlineKeyboardButton(text="🎲 Случайный", callback_data="category_random")],
+        [InlineKeyboardButton(text="👥 По полу (💎 premium)", callback_data="category_gender")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="main_menu")],
     ])
 
-
-def get_interests_keyboard() -> InlineKeyboardMarkup:
-    """
-    Клавиатура выбора интересов.
-    """
-    keyboard = []
-    for i, interest in enumerate(INTERESTS):
-        keyboard.append(InlineKeyboardButton(text=interest, callback_data=f"interest_{i}"))
-        if (i + 1) % 2 == 0:
-            keyboard.append("\n")
-    
-    buttons = []
-    for btn in keyboard:
-        if btn != "\n":
-            buttons.append(btn)
-        else:
-            continue
-    
-    # Group by 2
-    grouped = []
-    for i in range(0, len(buttons), 2):
-        grouped.append(buttons[i:i+2])
-    
-    return InlineKeyboardMarkup(inline_keyboard=grouped + [
-        [InlineKeyboardButton(text="✅ ОК", callback_data="interests_done")]
+def searching_kb():
+    """Searching... menu."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="❌ Отменить поиск", callback_data="cancel_search")],
     ])
 
+def chat_menu_kb():
+    """Chat menu with commands (AnonRuBot style)."""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="/stop ❌ Завершить")],
+            [KeyboardButton(text="/new ➡️ Новый чат")],
+            [KeyboardButton(text="/report 💥 Жалоба")],
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=False
+    )
 
-def get_search_category_keyboard() -> InlineKeyboardMarkup:
-    """
-    Клавиатура выбора категории поиска.
-    """
+def chat_actions_kb():
+    """Chat actions (inline)."""
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=category[0], callback_data=f"category_{category[1]}")] for category in CATEGORIES
+        [InlineKeyboardButton(text="💥 Жалоба", callback_data="report_user")],
+        [InlineKeyboardButton(text="❌ Завершить чат", callback_data="stop_chat")],
     ])
 
-
-def get_chat_menu() -> InlineKeyboardMarkup:
-    """
-    Меню в чате.
-    """
+def report_reason_kb():
+    """Report reasons (like AnonRuBot)."""
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⏭️ Пропустить", callback_data="chat_skip")],
-        [InlineKeyboardButton(text="📊 Жалоба", callback_data="chat_report")],
+        [InlineKeyboardButton(text="🚫 Спам", callback_data="report_spam")],
+        [InlineKeyboardButton(text="😤 Оскорбление", callback_data="report_abuse")],
+        [InlineKeyboardButton(text="🔞 Неприличный", callback_data="report_inappropriate")],
+        [InlineKeyboardButton(text="😠 Домогательство", callback_data="report_harassment")],
+        [InlineKeyboardButton(text="❌ Другое", callback_data="report_other")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="main_menu")],
     ])
 
-
-def get_report_reasons_keyboard() -> InlineKeyboardMarkup:
-    """
-    Клавиатура выбора причины жалобы.
-    """
+def gender_filter_kb():
+    """Gender filter for premium."""
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=reason[0], callback_data=f"report_{reason[1]}")] for reason in REPORT_REASONS
-    ])
-
-
-def get_premium_keyboard() -> InlineKeyboardMarkup:
-    """
-    Клавиатура выбора плана подписки.
-    """
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📅 Месячная", callback_data="premium_monthly")],
-        [InlineKeyboardButton(text="♾️ Пожизненная", callback_data="premium_lifetime")],
-        [InlineKeyboardButton(text="←️ Назад", callback_data="main_menu")],
-    ])
-
-
-def get_confirm_keyboard() -> InlineKeyboardMarkup:
-    """
-    Клавиатура подтверждения.
-    """
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Да", callback_data="confirm_yes")],
-        [InlineKeyboardButton(text="❌ Нет", callback_data="confirm_no")],
-    ])
-
-
-def get_back_button() -> InlineKeyboardMarkup:
-    """
-    Кнопка назад.
-    """
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="←️ Назад", callback_data="main_menu")],
+        [InlineKeyboardButton(text="👨 Мужины", callback_data="gender_filter_male")],
+        [InlineKeyboardButton(text="👩 Женщины", callback_data="gender_filter_female")],
+        [InlineKeyboardButton(text="🙀 Все", callback_data="gender_filter_all")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="search_category")],
     ])
