@@ -1,29 +1,20 @@
 from aiogram.fsm.state import State, StatesGroup
 
-
 class UserStates(StatesGroup):
-    # Регистрация
+    # Регистрация (минимальная)
     waiting_gender = State()
     waiting_age = State()
-    waiting_interests = State()
-    waiting_bio = State()
+    
+    # Главное меню
+    main_menu = State()
     
     # Поиск собеседника
     choosing_category = State()
-    choosing_gender_filter = State()
     searching = State()
     
     # Чат
     in_chat = State()
-    waiting_skip_confirm = State()
+    chat_menu = State()
     
     # Жалоба
-    reporting = State()
     report_reason = State()
-    report_description = State()
-    
-    # Редактирование профиля
-    editing_profile = State()
-    editing_age = State()
-    editing_interests = State()
-    editing_bio = State()
