@@ -244,13 +244,11 @@ async def find_partner(user_id: int, category: str, bot: Bot):
         
         logger.info(f"✅ Матч найден: {user_id} <-> {partner_id}")
         
-        # Уведомить партнера (того кто ждал)
+        # Уведомить партнера (того кто ждал) - ПЛОВАТОЙ МЕСДЖ БОТА
         try:
-            kb = get_chat_actions_keyboard()
             await bot.send_message(
                 partner_id,
-                "🎉 Собеседник найден!\n💬 Можете начать общение:",
-                reply_markup=kb
+                "🎉 Собеседник найден! Можете начать типать "
             )
             logger.info(f"✅ Партнер {partner_id} уведомлен о найденном матче")
         except Exception as e:
@@ -471,7 +469,7 @@ async def handle_category_selection(callback: CallbackQuery, state: FSMContext):
             chat_id = active_chats[user_id]['chat_id']
             
             await callback.message.edit_text(
-                "🎉 Собеседник найден!\n💬 Начните общение:",
+                "🎉 Собеседник найден!\n💬 Начните типать:",
                 reply_markup=get_chat_actions_keyboard()
             )
             
@@ -498,7 +496,7 @@ async def handle_category_selection(callback: CallbackQuery, state: FSMContext):
         await callback.answer("❌ Ошибка", show_alert=True)
 
 async def handle_chat_message(message: Message, state: FSMContext):
-    """Обработать сообщение в чате"""
+    """Обработать сообщение в чате - ОТПРАВЛЯЕМ ОБЫКНОЕ СООБЩЕНИЕЕ БОВЕЗ КНОПОК!"""
     global bot_instance
     try:
         data = await state.get_data()
@@ -516,12 +514,11 @@ async def handle_chat_message(message: Message, state: FSMContext):
         # Сохранить сообщение
         db.save_message(chat_id, user_id, message.text)
         
-        # Отправить партнеру
+        # Отправить партнеру - БЕЗ КНОПОК!
         try:
             await bot_instance.send_message(
                 partner_id,
-                f"💬 {message.text}",
-                reply_markup=get_chat_actions_keyboard()
+                f"💬 {message.text}"
             )
             logger.info(f"✅ Сообщение от {user_id} отправлено {partner_id}")
         except Exception as send_error:
