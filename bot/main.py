@@ -411,7 +411,7 @@ def get_interests_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 def get_chat_actions_keyboard():
-    """Кнопки во время чата (как в @AnonRuBot) - БЕЗ ОЦЕНОК"""
+    """Кнопки во время чата (как в @AnonRuBot)"""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📋 Спам и реклама", callback_data="report_spam")],
         [InlineKeyboardButton(text="❌ Пошлый собеседник", callback_data="report_inappropriate")],
@@ -601,9 +601,9 @@ async def handle_chat_message(message: Message, state: FSMContext):
         # Сохранить сообщение
         db.save_message(chat_id, user_id, message.text)
         
-        # Отправить партнеру - ПРОСТОЕ СООБЩЕНИЕ БЕЗ ЛИШНИХ ДАННЫХ
+        # Отправить партнеру - только текст без кнопок
         try:
-            await bot_instance.send_message(partner_id, message.text, reply_markup=get_chat_actions_keyboard())
+            await bot_instance.send_message(partner_id, message.text)
             logger.info(f"✅ Сообщение от {user_id} отправлено {partner_id}")
         except Exception as send_error:
             logger.error(f"❌ Ошибка отправки: {send_error}")
