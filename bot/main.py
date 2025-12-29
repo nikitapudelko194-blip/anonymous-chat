@@ -244,13 +244,15 @@ async def find_partner(user_id: int, category: str, bot: Bot):
         
         logger.info(f"✅ Матч найден: {user_id} <-> {partner_id}")
         
-        # Уведомить партнера
+        # Уведомить партнера (того кто ждал)
         try:
+            kb = get_chat_actions_keyboard()
             await bot.send_message(
                 partner_id,
-                "🎉 Собеседник найден!\n🎉 Можете начать общение:",
-                reply_markup=get_chat_actions_keyboard()
+                "🎉 Собеседник найден!\n💬 Можете начать общение:",
+                reply_markup=kb
             )
+            logger.info(f"✅ Партнер {partner_id} уведомлен о найденном матче")
         except Exception as e:
             logger.error(f"❌ Не смог уведомить партнера {partner_id}: {e}")
         
@@ -465,7 +467,7 @@ async def handle_category_selection(callback: CallbackQuery, state: FSMContext):
         partner_id = await find_partner(user_id, category, bot_instance)
         
         if partner_id:
-            # Партнер найден!
+            # Партнер найден сразу!
             chat_id = active_chats[user_id]['chat_id']
             
             await callback.message.edit_text(
@@ -479,6 +481,7 @@ async def handle_category_selection(callback: CallbackQuery, state: FSMContext):
                 partner_id=partner_id,
                 category=category
             )
+            logger.info(f"✅ {user_id} сразу найден партнер {partner_id}")
         else:
             # В очереди ожидания
             await callback.message.edit_text(
