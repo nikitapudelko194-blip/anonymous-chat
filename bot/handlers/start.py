@@ -1,9 +1,11 @@
 from aiogram import Router, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from states.user_states import UserStates
-from keyboards.main import main_menu_kb
-from database.db import Database
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+from ..states.user_states import UserStates
+from ..keyboards.main import main_menu_kb
+from ..database.db import Database
 
 router = Router()
 db = Database()
@@ -20,23 +22,13 @@ async def start(
     
     if not user:
         # Новый пользователь - выбрать пол
-        await message.answer(
-            "🎉 <b>Welcome to Anonymous Chat!</b>\n\n"
-            "🐐 <b>Выберите ваш пол:</b>",
-            parse_mode="HTML",
-            reply_markup=None  # снижу
-        )
-        
-        # Кнопки для выбора пола
-        from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="👨 Мужчина", callback_data="gender_male")],
             [InlineKeyboardButton(text="👩 Женщина", callback_data="gender_female")],
             [InlineKeyboardButton(text="🙀 Не скажу", callback_data="gender_other")],
         ])
         
-        from aiogram import types as aio_types
-        msg = await message.answer(
+        await message.answer(
             "🐐 <b>Выберите ваш пол:</b>",
             reply_markup=kb,
             parse_mode="HTML"
@@ -45,7 +37,7 @@ async def start(
         await state.set_state(UserStates.waiting_gender)
         return
     
-    # Приветствие вернулсяму пользователю
+    # Приветствие вернулся пользователю
     await message.answer(
         "🎉 <b>Anonymous Chat</b>\n\nПривет! Конфиденциальные беседы на любые темы.",
         reply_markup=main_menu_kb(),
@@ -91,7 +83,7 @@ async def set_age(
     try:
         age = int(message.text)
         if age < 13 or age > 120:
-            await message.answer("😜 Отсылаюсь, возраст должен быть не свыше 120 и не ниже 13")
+            await message.answer("😜 Извините, возраст должен быть не свыше 120 и не ниже 13")
             return
     except ValueError:
         await message.answer("❌ Пожалуйста, введите число")
