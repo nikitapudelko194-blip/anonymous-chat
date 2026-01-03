@@ -122,6 +122,10 @@ async def select_category(
         f"👤 <b>{user2_profile.get('first_name', 'Аноним')}</b>, {user2_profile.get('age', '?')} лет\n"
         f"🐐 Пол: {'👨' if user2_profile.get('gender') == 'male' else '👩' if user2_profile.get('gender') == 'female' else '🙀'}\n\n"
         "💬 Можете начинать написывать сообщения:\n\n"
+        "📸 <b>В диалоге можно делиться:</b>\n"
+        "📷 Фотографиями\n"
+        "🎞 Голосовыми сообщениями\n"
+        "👽 Стикерами\n\n"
         "/stop - завершить\n"
         "/new - новый чат\n"
         "/report - репорт",
@@ -136,6 +140,10 @@ async def select_category(
             f"👤 <b>{user1_profile.get('first_name', 'Аноним')}</b>, {user1_profile.get('age', '?')} лет\n"
             f"🐐 Пол: {'👨' if user1_profile.get('gender') == 'male' else '👩' if user1_profile.get('gender') == 'female' else '🙀'}\n\n"
             "💬 Можете начинать написывать сообщения:\n\n"
+            "📸 <b>В диалоге можно делиться:</b>\n"
+            "📷 Фотографиями\n"
+            "🎞 Голосовыми сообщениями\n"
+            "👽 Стикерами\n\n"
             "/stop - завершить\n"
             "/new - новый чат\n"
             "/report - репорт",
@@ -168,21 +176,22 @@ async def cancel_search(callback: types.CallbackQuery, state: FSMContext):
     )
     await state.set_state(UserStates.main_menu)
 
+# 📤 ИСПРАВЛЕННЫЙ ОБРАБОТЧИК ДЛЯ ВСЕХ ТИПОВ СООБЩЕНИЙ
 @router.message(UserStates.in_chat)
 async def handle_chat_message(
     message: types.Message,
     state: FSMContext
 ):
-    """Обработать сообщения в чате и команды."""
+    """Обработать сообщения в чате (текст, фото, голос, стикер) и команды."""
     
     # Команды
-    if message.text == '/stop':
+    if message.text and message.text == '/stop':
         await stop_chat(message, state)
         return
-    elif message.text == '/new':
+    elif message.text and message.text == '/new':
         await new_chat(message, state)
         return
-    elif message.text == '/report':
+    elif message.text and message.text == '/report':
         await start_report(message, state)
         return
     
@@ -191,56 +200,80 @@ async def handle_chat_message(
     other_user = data['other_user']
     my_user_id = data['my_user_id']
     
-    # Не отправлять пустые сообщения
-    if not message.text or message.text.startswith('/'):
+    # Не отправлять пустые текстовые сообщения
+    if message.text and (not message.text or message.text.startswith('/')):
         return
     
-    # 💾 Сохранить сообщение
+    # 💾 Определить тип сообщения и сохранить
+    message_type = None
+    if message.text:
+        message_type = 'text'
+        db_content = message.text
+    elif message.photo:
+        message_type = 'photo'
+        db_content = f"[📷 Фото]"
+    elif message.voice:
+        message_type = 'voice'
+        db_content = f"[🎞 Голос]"
+    elif message.sticker:
+        message_type = 'sticker'
+        db_content = f"[👽 Стикер]"
+    else:
+        # Неподдерживаемый тип
+        return
+    
+    # Сохранить в БД
     try:
         await db.save_message(
             chat_id=chat_id,
             sender_id=my_user_id,
             receiver_id=other_user,
-            content=message.text
+            content=db_content
         )
     except Exception as e:
         print(f"❌ Ошибка сохранения: {e}")
     
-    # 📤 Отправить собеседнику БЕЗ КНОПОК
+    # 📤 Отправить собеседнику (НОВОЕ СООБЩЕНИЕ, не редактирование!)
     try:
-        # Ялка для редактирования последнего сообщения
-        if other_user in last_messages and my_user_id in last_messages[other_user]:
-            # Грруппировать сообщения в одно
-            msg_id = last_messages[other_user][my_user_id]
-            try:
-                await bot.edit_message_text(
-                    chat_id=other_user,
-                    message_id=msg_id,
-                    text=f"💬 <i>{message.text}</i>",
-                    parse_mode="HTML"
-                )
-            except:
-                # Если не удалось редактировать - отправим новое
-                msg = await bot.send_message(
-                    other_user,
-                    f"💬 <i>{message.text}</i>",
-                    parse_mode="HTML"
-                )
-                if other_user not in last_messages:
-                    last_messages[other_user] = {}
-                last_messages[other_user][my_user_id] = msg.message_id
-        else:
-            # Первое сообщение
-            msg = await bot.send_message(
+        if message_type == 'text':
+            # Текстовое сообщение
+            await bot.send_message(
                 other_user,
                 f"💬 <i>{message.text}</i>",
                 parse_mode="HTML"
             )
-            if other_user not in last_messages:
-                last_messages[other_user] = {}
-            last_messages[other_user][my_user_id] = msg.message_id
+        elif message_type == 'photo':
+            # Фотография с подписью если есть
+            caption = f"📷 {message.caption}" if message.caption else None
+            await bot.send_photo(
+                other_user,
+                message.photo[-1].file_id,
+                caption=caption
+            )
+        elif message_type == 'voice':
+            # Голосовое сообщение
+            await bot.send_voice(
+                other_user,
+                message.voice.file_id
+            )
+        elif message_type == 'sticker':
+            # Стикер
+            await bot.send_sticker(
+                other_user,
+                message.sticker.file_id
+            )
     except Exception as e:
-        print(f"❌ Ошибка сенд: {e}")
+        print(f"❌ Ошибка отправки ({message_type}): {e}")
+        await message.answer(
+            f"❌ Ошибка отправки. Возможно, собеседник вышел из чата.",
+            parse_mode="HTML"
+        )
+        # Завершить чат при ошибке
+        try:
+            await db.end_chat(chat_id)
+        except:
+            pass
+        await state.set_state(UserStates.main_menu)
 
 async def stop_chat(message: types.Message, state: FSMContext):
     """Завершить чат."""
@@ -404,7 +437,7 @@ async def handle_report_reason(
             "через 7 дней"
         )
     
-    await callback.answer("✅ Присравка сыра", show_alert=True)
+    await callback.answer("✅ Репорт отправлен", show_alert=True)
     
     # Завершить чат
     await db.end_chat(chat_id)
