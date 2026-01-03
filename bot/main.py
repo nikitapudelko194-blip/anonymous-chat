@@ -372,7 +372,7 @@ async def find_partner(user_id: int, category: str, search_filters: dict, bot: B
             try:
                 await bot.send_message(
                     partner_id,
-                    "🎉 **Собеседник найден!**\n\n💬 Введите сообщение и отправьте его:",
+                    "🎉 <b>Собеседник найден!</b>\n\n💬 Введите сообщение и отправьте его:",
                     reply_markup=get_chat_actions_keyboard()
                 )
                 logger.info(f"✅ Партнёр {partner_id} уведомлен о подключении к {user_id}")
@@ -413,12 +413,12 @@ def get_interests_keyboard():
     """Выбор интересов"""
     interests = [
         ("🎮 Игры", "games"),
-        ("🎤 Фильмы", "movies"),
+        ("🎬 Фильмы", "movies"),
         ("🎵 Музыка", "music"),
         ("📚 Книги", "books"),
         ("💪 Спорт", "sports"),
         ("🎨 Искусство", "art"),
-        ("🝕 Кулинария", "food"),
+        ("🍕 Кулинария", "food"),
         ("✈️ Путешествия", "travel"),
         ("💼 Работа", "work"),
         ("💗 Отношения", "dating"),
@@ -479,7 +479,7 @@ async def cmd_start(message: Message, state: FSMContext):
             "🎭 <b>Добро пожаловать в Анонимный Чат Telegram!</b>\n\n"
             "Здесь можно найти интересного собеседника и общаться анонимно 💬\n\n"
             "✨ Полная конфиденциальность\n"
-            "🔐 Безопасность гарантирована\n"
+            "🔒 Безопасность гарантирована\n"
             "🌟 Много интересных людей\n\n"
             "<b>📚 Доступные команды:</b>\n"
             "`/search` - начать поиск собеседника\n"
@@ -508,7 +508,7 @@ async def cmd_search(message: Message, state: FSMContext):
         user_fsm_contexts[user_id] = state
         
         if user_id in active_chats:
-            await message.answer("⚠️ Вы уже в чате! Остановите новые /stop чтобы завершить.")
+            await message.answer("⚠️ Вы уже в чате! Используйте /stop чтобы завершить.")
             return
         
         # Проверить бан
@@ -539,7 +539,7 @@ async def cmd_search(message: Message, state: FSMContext):
             await message.answer(
                 "⏳ <b>Вы в очереди ожидания...</b>\n\n"
                 "Когда найдется собеседник, вы получите уведомление.\n"
-                "Остановите /stop чтобы отменить поиск."
+                "Используйте /stop чтобы отменить поиск."
             )
             await state.set_state(UserStates.in_chat)
             await state.update_data(chat_id=None, partner_id=None, category='random')
@@ -591,7 +591,7 @@ async def cmd_next(message: Message, state: FSMContext):
         else:
             await message.answer(
                 "⏳ <b>Вы в очереди ожидания нового собеседника...</b>\n\n"
-                "Остановите /stop чтобы отменить."
+                "Используйте /stop чтобы отменить."
             )
             await state.set_state(UserStates.in_chat)
             await state.update_data(chat_id=None, partner_id=None, category='random')
@@ -626,7 +626,7 @@ async def cmd_stop(message: Message, state: FSMContext):
                 pass
             
             await message.answer(
-                "✅ Натива чат!\n\n"
+                "✅ Чат завершен!\n\n"
                 "⭐ <b>Оцените собеседника:</b>",
                 reply_markup=get_rating_keyboard()
             )
@@ -634,7 +634,7 @@ async def cmd_stop(message: Message, state: FSMContext):
             # Если в очереди
             waiting_users[category].remove(user_id)
             await message.answer(
-                "❌ Поиск отменьт ю.\n\n"
+                "❌ Поиск отменён.\n\n"
                 "Вы вышли из очереди.",
                 reply_markup=get_main_menu()
             )
@@ -655,11 +655,11 @@ async def cmd_me(message: Message, state: FSMContext):
         data = await state.get_data()
         partner_id = data.get('partner_id')
         
-        # Обратить информацию пользователя
+        # Получить информацию пользователя
         user = db.get_user(user_id)
         
         # Формируем профиль
-        gender = {'мале': '👨', 'фемале': '👩', 'отхер': '🤷'}.get(user['gender'], '❌')
+        gender = {'male': '👨', 'female': '👩', 'other': '🤷'}.get(user['gender'], '❓')
         
         profile_text = (
             f"{gender} <b>{user['first_name'] or 'Аноним'}</b>\n\n"
@@ -688,7 +688,7 @@ async def cmd_me(message: Message, state: FSMContext):
         else:
             # Если не в чате - показать свой профиль
             await message.answer(
-                profile_text + "\n\n_Это ваш профиль. Остановите эту команду во время чата чтобы поделиться им._"
+                profile_text + "\n\n_Это ваш профиль. Используйте эту команду во время чата чтобы поделиться им._"
             )
     except Exception as e:
         logger.error(f"❌ Ошибка в cmd_me: {e}")
@@ -734,7 +734,7 @@ async def handle_chat_message(message: Message, state: FSMContext):
             db.save_message(chat_id, user_id, f"[👽 Стикер]")
         
         try:
-            # Отправить сообщение партнёру ПРОВНЫМ (новым сообщением)
+            # Отправить сообщение партнёру РОВНОМ (новым сообщением)
             if message.text:
                 # Текстовое сообщение
                 await bot_instance.send_message(partner_id, message.text)
@@ -810,7 +810,44 @@ async def cmd_search_callback(callback: CallbackQuery, state: FSMContext):
     except Exception as e:
         logger.error(f"❌ Ошибка: {e}")
 
-# ... (Остальные обработчики в другой части файла...)
+# ============= MAIN FUNCTION =============
 
-# Остальное - все аналогичные обработчики
-# ... файл есть в GitHub
+async def main():
+    """Главная функция запуска бота"""
+    global bot_instance
+    try:
+        # Инициализировать БД
+        await db.init_db()
+        
+        # Создать бот и диспетчер
+        bot_instance = Bot(
+            token=BOT_TOKEN,
+            default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+        )
+        dp = Dispatcher()
+        
+        # Регистрация команд
+        dp.message.register(cmd_start, Command("start"))
+        dp.message.register(cmd_search, Command("search"))
+        dp.message.register(cmd_next, Command("next"))
+        dp.message.register(cmd_stop, Command("stop"))
+        dp.message.register(cmd_me, Command("me"))
+        
+        # Регистрация callback кнопок
+        dp.callback_query.register(cmd_search_callback, F.data == "search_start")
+        
+        # Регистрация сообщений в чате
+        dp.message.register(handle_chat_message, UserStates.in_chat)
+        
+        logger.info("✅ Бот запущен и готов к работе!")
+        
+        # Запустить бота
+        await dp.start_polling(bot_instance)
+    except Exception as e:
+        logger.error(f"❌ Критическая ошибка: {e}", exc_info=True)
+    finally:
+        if bot_instance:
+            await bot_instance.session.close()
+
+if __name__ == "__main__":
+    asyncio.run(main())
