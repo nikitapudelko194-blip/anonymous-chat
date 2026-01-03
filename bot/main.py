@@ -37,6 +37,7 @@ active_chats = {}  # user_id -> {partner_id, chat_id, search_filters}
 user_states = {}  # user_id -> FSMContext state data
 # НОВОЕ: Хранилище для FSM контекстов (для отправки уведомлений партнёру)
 user_fsm_contexts = {}  # user_id -> FSMContext
+user_voted = {}  # user_id -> {chat_id} - кто уже оценил кого
 
 # Database
 class Database:
@@ -480,11 +481,13 @@ async def cmd_start(message: Message, state: FSMContext):
             "✨ Полная конфиденциальность\n"
             "🔒 Безопасность гарантирована\n"
             "🌟 Много интересных людей\n\n"
-            "**Доступные команды:**\n"
-            "`/search` - начать поиск\n"
-            "`/next` - новый диалог\n"
-            "`/stop` - завершить диалог\n"
-            "`/me` - поделиться профилем",
+            "**📚 Доступные команды:**\n"
+            "`/search` - начать поиск собеседника\n"
+            "`/next` - новый диалог (если уже в чате)\n"
+            "`/stop` - завершить текущий диалог\n"
+            "`/me` - поделиться своим профилем\n"
+            "`/start` - главное меню\n\n"
+            "**Выберите действие:**",
             reply_markup=get_main_menu()
         )
         await state.clear()
@@ -559,8 +562,8 @@ async def cmd_next(message: Message, state: FSMContext):
                 await bot_instance.send_message(
                     partner_id,
                     "❌ Собеседник начал новый диалог.\n\n"
-                    "Начните новый поиск:",
-                    reply_markup=get_main_menu()
+                    "⭐ **Оцените его/её:**",
+                    reply_markup=get_rating_keyboard()
                 )
             except:
                 pass
@@ -612,8 +615,8 @@ async def cmd_stop(message: Message, state: FSMContext):
                 await bot_instance.send_message(
                     partner_id,
                     "❌ Собеседник завершил чат.\n\n"
-                    "Начните новый поиск:",
-                    reply_markup=get_main_menu()
+                    "⭐ **Оцените его/её:**",
+                    reply_markup=get_rating_keyboard()
                 )
             except:
                 pass
@@ -871,12 +874,13 @@ async def handle_end_chat(callback: CallbackQuery, state: FSMContext):
         active_chats.pop(user_id, None)
         active_chats.pop(partner_id, None)
         
+        # Уведомить партнёра о завершении чата и показать ему окно оценки
         try:
             await bot_instance.send_message(
                 partner_id,
-                "❌ Собеседник завершил чат\n\n"
-                "⭐ Он/она предлагает оценить себя.",
-                reply_markup=get_main_menu()
+                "❌ Собеседник завершил чат.\n\n"
+                "⭐ **Оцените его/её:**",
+                reply_markup=get_rating_keyboard()
             )
         except Exception as e:
             logger.error(f"❌ Ошибка при уведомлении партнёра: {e}")
