@@ -486,7 +486,7 @@ async def cmd_start(message: Message, state: FSMContext):
             "`/next` - новый диалог (если уже в чате)\n"
             "`/stop` - завершить текущий диалог\n"
             "`/me` - поделиться своим профилем\n"
-            "`/start` - главное меню\n\n"
+            "`/help` - справка по использованию\n\n"
             "<b>📸 В диалоге можно делиться:</b>\n"
             "📷 Фотографиями\n"
             "🎞 Голосовыми сообщениями\n"
@@ -693,6 +693,37 @@ async def cmd_me(message: Message, state: FSMContext):
     except Exception as e:
         logger.error(f"❌ Ошибка в cmd_me: {e}")
 
+async def cmd_help(message: Message, state: FSMContext):
+    """Команда /help - справка по боту"""
+    try:
+        await message.answer(
+            "<b>📖 Справка по использованию бота</b>\n\n"
+            "<b>Основные команды:</b>\n"
+            "🔍 <b>/search</b> - Найти собеседника\n"
+            "  Начнет поиск партнера для анонимного чата\n\n"
+            "⏭️ <b>/next</b> - Новый диалог\n"
+            "  Закончит текущий чат и найдет нового собеседника\n\n"
+            "⛔ <b>/stop</b> - Завершить чат\n"
+            "  Прекратит текущий диалог\n\n"
+            "👤 <b>/me</b> - Мой профиль\n"
+            "  Отправит ваш профиль в чат (если вы в нем)\n\n"
+            "<b>Функции:</b>\n"
+            "📢 <b>Отправка медиа</b>\n"
+            "  - 📷 Фотографии\n"
+            "  - 🎙️ Голосовые сообщения\n"
+            "  - 😊 Стикеры\n\n"
+            "⭐ <b>Система рейтинга</b>\n"
+            "  После чата можно оценить собеседника (👍 или 👎)\n\n"
+            "<b>Правила:</b>\n"
+            "✅ Будьте вежливы\n"
+            "✅ Не спамьте\n"
+            "✅ Уважайте соседа\n\n"
+            "❓ Вопросы? Напишите в поддержку!",
+            reply_markup=get_main_menu()
+        )
+    except Exception as e:
+        logger.error(f"❌ Ошибка в cmd_help: {e}")
+
 # ИСПРАВЛЕННЫЕ ОБРАБОТЧИКИ ДЛЯ ПОДДЕРКИ МЕДИА
 
 async def handle_chat_message(message: Message, state: FSMContext):
@@ -729,12 +760,12 @@ async def handle_chat_message(message: Message, state: FSMContext):
         elif message.photo:
             db.save_message(chat_id, user_id, f"[📷 Фото]")
         elif message.voice:
-            db.save_message(chat_id, user_id, f"[🎞 Голос]")
+            db.save_message(chat_id, user_id, f"[🎙️ Голос]")
         elif message.sticker:
             db.save_message(chat_id, user_id, f"[👽 Стикер]")
         
         try:
-            # Отправить сообщение партнёру РОВНОМ (новым сообщением)
+            # Отправить сообщение партнёру РОВНО (новым сообщением)
             if message.text:
                 # Текстовое сообщение
                 await bot_instance.send_message(partner_id, message.text)
@@ -832,12 +863,18 @@ async def main():
         dp.message.register(cmd_next, Command("next"))
         dp.message.register(cmd_stop, Command("stop"))
         dp.message.register(cmd_me, Command("me"))
+        dp.message.register(cmd_help, Command("help"))
         
         # Регистрация callback кнопок
         dp.callback_query.register(cmd_search_callback, F.data == "search_start")
         
-        # Регистрация сообщений в чате
-        dp.message.register(handle_chat_message, UserStates.in_chat)
+        # ИСПРАВЛЕННАЯ регистрация обработчиков медиа для in_chat состояния
+        # Порядок ВАЖЕН: более специфичные фильтры должны быть ДО более общих!
+        # Сначала регистрируем медиа (voice, photo, sticker), потом текст
+        dp.message.register(handle_chat_message, UserStates.in_chat, F.voice)
+        dp.message.register(handle_chat_message, UserStates.in_chat, F.photo)
+        dp.message.register(handle_chat_message, UserStates.in_chat, F.sticker)
+        dp.message.register(handle_chat_message, UserStates.in_chat)  # Текстовые сообщения
         
         logger.info("✅ Бот запущен и готов к работе!")
         
