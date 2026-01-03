@@ -1,15 +1,16 @@
 from aiogram import Router, F, types, Bot
 from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from states.user_states import UserStates
-from utils.matching import find_match, remove_from_queue, get_queue_size
-from utils.notifications import notify_match_found
-from keyboards.main import (
+
+from ..states.user_states import UserStates
+from ..utils.matching import find_match, remove_from_queue, get_queue_size
+from ..utils.notifications import notify_match_found
+from ..keyboards.main import (
     main_menu_kb, search_category_kb, chat_menu_kb,
     report_reason_kb, searching_kb
 )
-from database.db import Database
-from config import BOT_TOKEN
+from ..database.db import Database
+from ..config import BOT_TOKEN
 
 router = Router()
 db = Database()
@@ -426,11 +427,11 @@ async def handle_report_reason(
     await db.increment_reports(reported_user_id)
     
     # Проверить бан
-    from utils.ban import check_and_apply_ban
+    from ..utils.ban import check_and_apply_ban
     is_banned = await check_and_apply_ban(reported_user_id, db)
     
     if is_banned:
-        from utils.notifications import notify_ban
+        from ..utils.notifications import notify_ban
         await notify_ban(
             reported_user_id,
             "Слишком много репортов",
