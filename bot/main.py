@@ -17,6 +17,7 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKe
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.filters.command import Command
+from aiogram.exceptions import TelegramNetworkError, TelegramAPIError
 
 from config import BOT_TOKEN, DB_PATH
 
@@ -458,6 +459,41 @@ def get_vip_plans_keyboard():
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu")],
     ])
 
+# ============= HELPER FUNCTIONS =============
+
+async def safe_send_message(chat_id, text, reply_markup=None, timeout=30):
+    """Безопасная отправка сообщения с повторами при таймаутах"""
+    global bot_instance
+    retries = 3
+    for attempt in range(retries):
+        try:
+            await asyncio.wait_for(
+                bot_instance.send_message(
+                    chat_id,
+                    text,
+                    reply_markup=reply_markup
+                ),
+                timeout=timeout
+            )
+            return True
+        except asyncio.TimeoutError:
+            logger.warning(f"⏱️ Таймаут при отправке сообщения {chat_id} (попытка {attempt+1}/{retries})")
+            if attempt < retries - 1:
+                await asyncio.sleep(2 ** attempt)  # Экспоненциальная задержка
+            else:
+                logger.error(f"❌ Не удалось отправить сообщение {chat_id} после {retries} попыток")
+                return False
+        except TelegramNetworkError as e:
+            logger.warning(f"🌐 Сетевая ошибка: {e}")
+            if attempt < retries - 1:
+                await asyncio.sleep(2 ** attempt)
+            else:
+                return False
+        except Exception as e:
+            logger.error(f"❌ Ошибка при отправке: {e}")
+            return False
+    return False
+
 # ============= HANDLERS =============
 
 async def cmd_start(message: Message, state: FSMContext):
@@ -474,7 +510,8 @@ async def cmd_start(message: Message, state: FSMContext):
             db.create_user(user_id, message.from_user.username, message.from_user.first_name)
             logger.info(f"✨ Новый пользователь: {user_id}")
         
-        await message.answer(
+        await safe_send_message(
+            user_id,
             f"👋 Привет, {message.from_user.first_name or 'друг'}!\n\n"
             "🎭 <b>Добро пожаловать в Анонимный Чат Telegram!</b>\n\n"
             "Здесь можно найти интересного собеседника и общаться анонимно 💬\n\n"
@@ -486,7 +523,7 @@ async def cmd_start(message: Message, state: FSMContext):
             "`/next` - новый диалог (если уже в чате)\n"
             "`/stop` - завершить текущий диалог\n"
             "`/me` - поделиться своим профилем\n"
-            "`/help` - справка по использованию\n\n"
+            "`/help` - справка\n\n"
             "<b>📸 В диалоге можно делиться:</b>\n"
             "📷 Фотографиями\n"
             "🎞 Голосовыми сообщениями\n"
@@ -508,7 +545,7 @@ async def cmd_search(message: Message, state: FSMContext):
         user_fsm_contexts[user_id] = state
         
         if user_id in active_chats:
-            await message.answer("⚠️ Вы уже в чате! Используйте /stop чтобы завершить.")
+            await safe_send_message(user_id, "⚠️ Вы уже в чате! Используйте /stop чтобы завершить.")
             return
         
         # Проверить бан
@@ -516,13 +553,13 @@ async def cmd_search(message: Message, state: FSMContext):
             if user['ban_expires_at']:
                 expires = datetime.fromisoformat(user['ban_expires_at'])
                 if expires > datetime.now():
-                    await message.answer(f"❌ Вы заблокированы до {expires.strftime('%d.%m')}")
+                    await safe_send_message(user_id, f"❌ Вы заблокированы до {expires.strftime('%d.%m')}")
                     return
             else:
-                await message.answer("❌ Вы заблокированы")
+                await safe_send_message(user_id, "❌ Вы заблокированы")
                 return
         
-        await message.answer("⏳ Ищем собеседника...\n\n⏰ Это может занять несколько секунд")
+        await safe_send_message(user_id, "⏳ Ищем собеседника...\n\n⏰ Это может занять несколько секунд")
         
         partner_id, chat_id = await find_partner(user_id, 'random', {}, bot_instance, state)
         
@@ -530,13 +567,15 @@ async def cmd_search(message: Message, state: FSMContext):
             await state.set_state(UserStates.in_chat)
             await state.update_data(chat_id=chat_id, partner_id=partner_id, category='random')
             
-            await message.answer(
+            await safe_send_message(
+                user_id,
                 "🎉 <b>Собеседник найден!</b>\n\n"
                 "💬 Введите сообщение и отправьте его:",
                 reply_markup=get_chat_actions_keyboard()
             )
         else:
-            await message.answer(
+            await safe_send_message(
+                user_id,
                 "⏳ <b>Вы в очереди ожидания...</b>\n\n"
                 "Когда найдется собеседник, вы получите уведомление.\n"
                 "Используйте /stop чтобы отменить поиск."
@@ -563,11 +602,14 @@ async def cmd_next(message: Message, state: FSMContext):
             
             # Уведомить партнёра
             try:
-                await bot_instance.send_message(
-                    partner_id,
-                    "❌ Собеседник начал новый диалог.\n\n"
-                    "⭐ <b>Оцените его/её:</b>",
-                    reply_markup=get_rating_keyboard()
+                await asyncio.wait_for(
+                    bot_instance.send_message(
+                        partner_id,
+                        "❌ Собеседник начал новый диалог.\n\n"
+                        "⭐ <b>Оцените его/её:</b>",
+                        reply_markup=get_rating_keyboard()
+                    ),
+                    timeout=15
                 )
             except:
                 pass
@@ -575,7 +617,7 @@ async def cmd_next(message: Message, state: FSMContext):
         await state.clear()
         user_fsm_contexts[user_id] = state
         
-        await message.answer("⏳ Ищем нового собеседника...")
+        await safe_send_message(user_id, "⏳ Ищем нового собеседника...")
         
         partner_id, chat_id = await find_partner(user_id, 'random', {}, bot_instance, state)
         
@@ -583,13 +625,15 @@ async def cmd_next(message: Message, state: FSMContext):
             await state.set_state(UserStates.in_chat)
             await state.update_data(chat_id=chat_id, partner_id=partner_id, category='random')
             
-            await message.answer(
+            await safe_send_message(
+                user_id,
                 "🎉 <b>Собеседник найден!</b>\n\n"
                 "💬 Введите сообщение и отправьте его:",
                 reply_markup=get_chat_actions_keyboard()
             )
         else:
-            await message.answer(
+            await safe_send_message(
+                user_id,
                 "⏳ <b>Вы в очереди ожидания нового собеседника...</b>\n\n"
                 "Используйте /stop чтобы отменить."
             )
@@ -616,16 +660,20 @@ async def cmd_stop(message: Message, state: FSMContext):
             
             # Уведомить партнёра
             try:
-                await bot_instance.send_message(
-                    partner_id,
-                    "❌ Собеседник завершил чат.\n\n"
-                    "⭐ <b>Оцените его/её:</b>",
-                    reply_markup=get_rating_keyboard()
+                await asyncio.wait_for(
+                    bot_instance.send_message(
+                        partner_id,
+                        "❌ Собеседник завершил чат.\n\n"
+                        "⭐ <b>Оцените его/её:</b>",
+                        reply_markup=get_rating_keyboard()
+                    ),
+                    timeout=15
                 )
             except:
                 pass
             
-            await message.answer(
+            await safe_send_message(
+                user_id,
                 "✅ Чат завершен!\n\n"
                 "⭐ <b>Оцените собеседника:</b>",
                 reply_markup=get_rating_keyboard()
@@ -633,13 +681,15 @@ async def cmd_stop(message: Message, state: FSMContext):
         elif category and user_id in waiting_users[category]:
             # Если в очереди
             waiting_users[category].remove(user_id)
-            await message.answer(
+            await safe_send_message(
+                user_id,
                 "❌ Поиск отменён.\n\n"
                 "Вы вышли из очереди.",
                 reply_markup=get_main_menu()
             )
         else:
-            await message.answer(
+            await safe_send_message(
+                user_id,
                 "ℹ️ Вы не в чате и не в очереди.",
                 reply_markup=get_main_menu()
             )
@@ -674,20 +724,24 @@ async def cmd_me(message: Message, state: FSMContext):
         if partner_id and user_id in active_chats:
             # Если в чате - отправить партнёру
             try:
-                await bot_instance.send_message(
-                    partner_id,
-                    profile_text,
-                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="✍️ Ответить", callback_data="send_profile")]
-                    ])
+                await asyncio.wait_for(
+                    bot_instance.send_message(
+                        partner_id,
+                        profile_text,
+                        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                            [InlineKeyboardButton(text="✏️ Ответить", callback_data="send_profile")]
+                        ])
+                    ),
+                    timeout=15
                 )
-                await message.answer("✅ Профиль отправлен собеседнику!")
+                await safe_send_message(user_id, "✅ Профиль отправлен собеседнику!")
             except Exception as e:
                 logger.error(f"❌ Ошибка отправки профиля: {e}")
-                await message.answer("❌ Ошибка при отправке профиля.")
+                await safe_send_message(user_id, "❌ Ошибка при отправке профиля.")
         else:
             # Если не в чате - показать свой профиль
-            await message.answer(
+            await safe_send_message(
+                user_id,
                 profile_text + "\n\n_Это ваш профиль. Используйте эту команду во время чата чтобы поделиться им._"
             )
     except Exception as e:
@@ -696,12 +750,13 @@ async def cmd_me(message: Message, state: FSMContext):
 async def cmd_help(message: Message, state: FSMContext):
     """Команда /help - справка по боту"""
     try:
-        await message.answer(
+        await safe_send_message(
+            message.from_user.id,
             "<b>📖 Справка по использованию бота</b>\n\n"
             "<b>Основные команды:</b>\n"
             "🔍 <b>/search</b> - Найти собеседника\n"
             "  Начнет поиск партнера для анонимного чата\n\n"
-            "⏭️ <b>/next</b> - Новый диалог\n"
+            "↩️ <b>/next</b> - Новый диалог\n"
             "  Закончит текущий чат и найдет нового собеседника\n\n"
             "⛔ <b>/stop</b> - Завершить чат\n"
             "  Прекратит текущий диалог\n\n"
@@ -710,7 +765,7 @@ async def cmd_help(message: Message, state: FSMContext):
             "<b>Функции:</b>\n"
             "📢 <b>Отправка медиа</b>\n"
             "  - 📷 Фотографии\n"
-            "  - 🎙️ Голосовые сообщения\n"
+            "  - 🎤 Голосовые сообщения\n"
             "  - 😊 Стикеры\n\n"
             "⭐ <b>Система рейтинга</b>\n"
             "  После чата можно оценить собеседника (👍 или 👎)\n\n"
@@ -724,7 +779,7 @@ async def cmd_help(message: Message, state: FSMContext):
     except Exception as e:
         logger.error(f"❌ Ошибка в cmd_help: {e}")
 
-# ИСПРАВЛЕННЫЕ ОБРАБОТЧИКИ ДЛЯ ПОДДЕРКИ МЕДИА
+# ИСПРАВЛЕННЫЕ ОБРАБОТЧИКИ ДЛЯ ПОДДЕРЖКИ МЕДИА
 
 async def handle_chat_message(message: Message, state: FSMContext):
     """Обработать сообщение в чате (текст, фото, голос, стикер)"""
@@ -736,7 +791,8 @@ async def handle_chat_message(message: Message, state: FSMContext):
         partner_id = data.get('partner_id')
         
         if not chat_id or not partner_id or user_id not in active_chats:
-            await message.answer(
+            await safe_send_message(
+                user_id,
                 "❌ Чат не найден или завершен.\n\n"
                 "Начните новый поиск:",
                 reply_markup=get_main_menu()
@@ -745,7 +801,8 @@ async def handle_chat_message(message: Message, state: FSMContext):
             return
         
         if partner_id not in active_chats or active_chats[partner_id].get('chat_id') != chat_id:
-            await message.answer(
+            await safe_send_message(
+                user_id,
                 "❌ Собеседник завершил чат.\n\n"
                 "Начните новый поиск:",
                 reply_markup=get_main_menu()
@@ -754,37 +811,52 @@ async def handle_chat_message(message: Message, state: FSMContext):
             active_chats.pop(user_id, None)
             return
         
-        # Обработать повторно - сохраним сообщение в БД
+        # Обработать повторно - сохраняем сообщение в БД
         if message.text:
             db.save_message(chat_id, user_id, message.text)
         elif message.photo:
-            db.save_message(chat_id, user_id, f"[📷 Фото]")
+            db.save_message(chat_id, user_id, "[📷 Фото]")
         elif message.voice:
-            db.save_message(chat_id, user_id, f"[🎙️ Голос]")
+            db.save_message(chat_id, user_id, "[🎤 Голос]")
         elif message.sticker:
-            db.save_message(chat_id, user_id, f"[👽 Стикер]")
+            db.save_message(chat_id, user_id, "[😊 Стикер]")
         
         try:
             # Отправить сообщение партнёру РОВНО (новым сообщением)
             if message.text:
                 # Текстовое сообщение
-                await bot_instance.send_message(partner_id, message.text)
+                await asyncio.wait_for(
+                    bot_instance.send_message(partner_id, message.text),
+                    timeout=20
+                )
                 logger.info(f"✅ Текст от {user_id} отправлен {partner_id}")
             elif message.photo:
                 # Фотография
-                await bot_instance.send_photo(partner_id, message.photo[-1].file_id, caption=message.caption or "📷")
-                logger.info(f"✅ Фото от {user_id} отправлена {partner_id}")
+                await asyncio.wait_for(
+                    bot_instance.send_photo(partner_id, message.photo[-1].file_id, caption=message.caption or "📷"),
+                    timeout=20
+                )
+                logger.info(f"✅ Фото от {user_id} отправлено {partner_id}")
             elif message.voice:
                 # Голосовое сообщение
-                await bot_instance.send_voice(partner_id, message.voice.file_id)
+                await asyncio.wait_for(
+                    bot_instance.send_voice(partner_id, message.voice.file_id),
+                    timeout=20
+                )
                 logger.info(f"✅ Голос от {user_id} отправлен {partner_id}")
             elif message.sticker:
                 # Стикер
-                await bot_instance.send_sticker(partner_id, message.sticker.file_id)
+                await asyncio.wait_for(
+                    bot_instance.send_sticker(partner_id, message.sticker.file_id),
+                    timeout=20
+                )
                 logger.info(f"✅ Стикер от {user_id} отправлен {partner_id}")
+        except asyncio.TimeoutError:
+            logger.warning(f"⏱️ Таймаут при отправке сообщения партнёру {partner_id}")
+            await safe_send_message(user_id, "⏱️ Проблема с отправкой (таймаут). Попробуйте еще раз.")
         except Exception as send_error:
             logger.error(f"❌ Ошибка отправки сообщения партнёру {partner_id}: {send_error}")
-            await message.answer("❌ Ошибка отправки сообщения. Возможно, собеседник вышел из чата.")
+            await safe_send_message(user_id, "❌ Ошибка отправки сообщения. Возможно, собеседник вышел из чата.")
             db.end_chat(chat_id)
             active_chats.pop(user_id, None)
             active_chats.pop(partner_id, None)
@@ -816,7 +888,11 @@ async def cmd_search_callback(callback: CallbackQuery, state: FSMContext):
                 return
         
         await callback.answer()
-        await callback.message.edit_text("⏳ Ищем собеседника...\n\n⏰ Это может занять несколько секунд")
+        
+        try:
+            await callback.message.edit_text("⏳ Ищем собеседника...\n\n⏰ Это может занять несколько секунд")
+        except:
+            pass
         
         partner_id, chat_id = await find_partner(user_id, 'random', {}, bot_instance, state)
         
@@ -824,18 +900,24 @@ async def cmd_search_callback(callback: CallbackQuery, state: FSMContext):
             await state.set_state(UserStates.in_chat)
             await state.update_data(chat_id=chat_id, partner_id=partner_id, category='random')
             
-            await callback.message.edit_text(
-                "🎉 <b>Собеседник найден!</b>\n\n"
-                "💬 Введите сообщение и отправьте его:",
-                reply_markup=get_chat_actions_keyboard()
-            )
+            try:
+                await callback.message.edit_text(
+                    "🎉 <b>Собеседник найден!</b>\n\n"
+                    "💬 Введите сообщение и отправьте его:",
+                    reply_markup=get_chat_actions_keyboard()
+                )
+            except:
+                pass
         else:
-            await callback.message.edit_text(
-                "⏳ <b>Вы в очереди ожидания...",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="❌ Отмена поиска", callback_data="cancel_search")],
-                ])
-            )
+            try:
+                await callback.message.edit_text(
+                    "⏳ <b>Вы в очереди ожидания...",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="❌ Отмена поиска", callback_data="cancel_search")],
+                    ])
+                )
+            except:
+                pass
             await state.set_state(UserStates.in_chat)
             await state.update_data(chat_id=None, partner_id=None, category='random')
     except Exception as e:
@@ -850,7 +932,7 @@ async def main():
         # Инициализировать БД
         await db.init_db()
         
-        # Создать бот и диспетчер
+        # Создать бот и диспетчер с увеличенными таймаутами
         bot_instance = Bot(
             token=BOT_TOKEN,
             default=DefaultBotProperties(parse_mode=ParseMode.HTML)
