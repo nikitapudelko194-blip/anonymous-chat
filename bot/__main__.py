@@ -1,54 +1,44 @@
 #!/usr/bin/env python3
-"""Entry point для запуска бота."""
+"""Entry point for running the bot.
+
+This module serves as the main entry point for the anonymous chat bot.
+It initializes and starts the bot with all necessary handlers and middleware.
+"""
 
 import asyncio
-import logging
-from aiogram import Bot, Dispatcher
-from aiogram.types import BotCommand
-from bot.config import BOT_TOKEN
-from bot.handlers.start import router as start_router
-from bot.handlers.chat import router as chat_router
-from bot.middleware.throttle import ThrottleMiddleware
+import sys
+from pathlib import Path
 
-# Настройка логирования
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-async def set_commands(bot: Bot):
-    """Установить команды бота."""
-    commands = [
-        BotCommand(command="start", description="🚀 Начать"),
-        BotCommand(command="help", description="ℹ️ Помощь"),
-        BotCommand(command="stop", description="🛑 Остановить чат"),
-    ]
-    await bot.set_my_commands(commands)
+# Import main bot function from bot.main
+try:
+    from bot.main import main as bot_main
+except ImportError as e:
+    print(f"❌ Error importing bot.main: {e}")
+    print("Make sure bot/main.py exists and is properly configured.")
+    sys.exit(1)
+
 
 async def main():
-    """Главная функция запуска."""
-    # Инициализация бота и диспетчера
-    bot = Bot(token=BOT_TOKEN, parse_mode="HTML")
-    dp = Dispatcher()
+    """Main async entry point.
     
-    # Регистрация middleware
-    dp.message.middleware(ThrottleMiddleware())
-    
-    # Регистрация роутеров
-    dp.include_router(start_router)
-    dp.include_router(chat_router)
-    
-    # Установка команд
-    await set_commands(bot)
-    
-    logger.info("🚀 Бот запущен")
-    
+    This function calls the bot_main function which contains all the bot logic,
+    database initialization, dispatcher setup, and polling.
+    """
     try:
-        await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
-    finally:
-        await bot.session.close()
-        logger.info("🛑 Бот остановлен")
+        # Start the bot
+        await bot_main()
+    except KeyboardInterrupt:
+        print("\n🛑 Bot stopped by user (Ctrl+C)")
+    except Exception as e:
+        print(f"❌ Fatal error: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
 
 if __name__ == "__main__":
+    print("🚀 Starting Anonymous Chat Bot...")
     asyncio.run(main())
