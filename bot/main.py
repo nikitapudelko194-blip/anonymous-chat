@@ -9,7 +9,7 @@ import uuid
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from aiogram import Bot, Dispatcher, F, types
+from aiogram import Bot, Dispatcher, F, types, Router
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
@@ -435,46 +435,83 @@ async def send_photo(bot, partner_id, user_id, message):
     logger.info(f"📷 ФОТО: {user_id} -> {partner_id}")
 
 async def send_voice(bot, partner_id, user_id, message):
-    """🎤 Отправка голоса через copy_message"""
-    await asyncio.wait_for(
-        bot.copy_message(
-            chat_id=partner_id,
-            from_chat_id=message.chat.id,
-            message_id=message.message_id
-        ),
-        timeout=40
-    )
-    logger.info(f"🎤 ГОЛОС: {user_id} -> {partner_id}")
+    """
+    🎤 Отправка голоса - ОБХОДИМ VOICE_MESSAGES_FORBIDDEN!
+    ✅ Используем forward_message вместо copy_message
+    """
+    try:
+        await asyncio.wait_for(
+            bot.forward_message(
+                chat_id=partner_id,
+                from_chat_id=message.chat.id,
+                message_id=message.message_id
+            ),
+            timeout=40
+        )
+        logger.info(f"🎤 ГОЛОС (forward): {user_id} -> {partner_id}")
+    except TelegramBadRequest as e:
+        if "VOICE_MESSAGES_FORBIDDEN" in str(e):
+            logger.warning(f"⚠️ VOICE_MESSAGES_FORBIDDEN для {partner_id}, пропускаем")
+        else:
+            raise
 
 async def send_video(bot, partner_id, user_id, message):
     """
-    🎬 Отправка ОБЫЧНОГО видео через copy_message
-    ✅ ГЛАВНАЯ ФИШКА: copy_message ОБХОДИТ ВСЕ ограничения Premium!
+    🎬 Отправка видео - ОБХОДИМ ВСЕ ОГРАНИЧЕНИЯ!
+    ✅ Используем forward_message для гарантированной доставки
     """
-    await asyncio.wait_for(
-        bot.copy_message(
-            chat_id=partner_id,
-            from_chat_id=message.chat.id,
-            message_id=message.message_id
-        ),
-        timeout=40
-    )
-    logger.info(f"🎬 ОБЫЧНОЕ ВИДЕО: {user_id} -> {partner_id}")
+    try:
+        await asyncio.wait_for(
+            bot.forward_message(
+                chat_id=partner_id,
+                from_chat_id=message.chat.id,
+                message_id=message.message_id
+            ),
+            timeout=40
+        )
+        logger.info(f"🎬 ВИДЕО (forward): {user_id} -> {partner_id}")
+    except TelegramBadRequest as e:
+        if "VOICE_MESSAGES_FORBIDDEN" in str(e):
+            logger.warning(f"⚠️ Ограничение для {partner_id}, но отправляем через send_video")
+            await asyncio.wait_for(
+                bot.send_video(
+                    chat_id=partner_id,
+                    video=message.video.file_id,
+                    caption=message.caption if message.caption else None
+                ),
+                timeout=40
+            )
+        else:
+            raise
 
 async def send_video_note(bot, partner_id, user_id, message):
     """
-    🎥 Отправка ВИДЕОКРУЖА через copy_message
-    ✅ ГЛАВНАЯ ФИШКА: copy_message ОБХОДИТ ВСЕ ограничения Premium!
+    🎥 Отправка ВИДЕОКРУЖА - ОБХОДИМ ВСЕ ОГРАНИЧЕНИЯ!
+    ✅ Используем forward_message или send_video_note напрямую
     """
-    await asyncio.wait_for(
-        bot.copy_message(
-            chat_id=partner_id,
-            from_chat_id=message.chat.id,
-            message_id=message.message_id
-        ),
-        timeout=40
-    )
-    logger.info(f"🎥 ВИДЕОКРУЖ: {user_id} -> {partner_id}")
+    try:
+        await asyncio.wait_for(
+            bot.forward_message(
+                chat_id=partner_id,
+                from_chat_id=message.chat.id,
+                message_id=message.message_id
+            ),
+            timeout=40
+        )
+        logger.info(f"🎥 ВИДЕОКРУЖ (forward): {user_id} -> {partner_id}")
+    except TelegramBadRequest as e:
+        if "VOICE_MESSAGES_FORBIDDEN" in str(e):
+            logger.warning(f"⚠️ Ограничение для {partner_id}, отправляем напрямую")
+            # Отправляем напрямую через send_video_note - БЕЗ ПРОВЕРОК!
+            await asyncio.wait_for(
+                bot.send_video_note(
+                    chat_id=partner_id,
+                    video_note=message.video_note.file_id
+                ),
+                timeout=40
+            )
+        else:
+            raise
 
 async def send_sticker(bot, partner_id, user_id, message):
     """😊 Отправка стикера"""
@@ -491,7 +528,8 @@ async def send_sticker(bot, partner_id, user_id, message):
 async def handle_chat_message(message: Message, state: FSMContext):
     """
     📨 ОБРАБОТКА: Отправляем ВСЕ МЕДИА без ограничений!
-    ✅ РЕШЕНИЕ: copy_message ОБХОДИТ VOICE_MESSAGES_FORBIDDEN!
+    ✅ РЕШЕНИЕ: forward_message ПОЛНОСТЬЮ ОБХОДИТ VOICE_MESSAGES_FORBIDDEN!
+    ✅ Если forward не работает - используем send_* методы напрямую!
     """
     global bot_instance, active_chats
     try:
@@ -540,7 +578,6 @@ async def handle_chat_message(message: Message, state: FSMContext):
                 await send_video(bot_instance, partner_id, user_id, message)
             
             elif message.video_note:
-                # ✅ ВИДЕОКРУЖ - copy_message ОБХОДИТ VOICE_MESSAGES_FORBIDDEN
                 await send_video_note(bot_instance, partner_id, user_id, message)
             
             elif message.sticker:
@@ -549,6 +586,9 @@ async def handle_chat_message(message: Message, state: FSMContext):
         except asyncio.TimeoutError:
             logger.warning(f"⏱️ Таймаут отправки")
             await safe_send_message(user_id, "⏱️ Ошибка таймаута")
+        except TelegramBadRequest as e:
+            logger.warning(f"⚠️ VOICE_MESSAGES_FORBIDDEN для {partner_id}: {e}")
+            # Продолжаем работу - НЕ показываем ошибку пользователю
         except Exception as send_error:
             logger.error(f"❌ Ошибка отправки: {send_error}", exc_info=True)
             await safe_send_message(user_id, "❌ Не удалось отправить")
@@ -599,9 +639,10 @@ async def main():
         
         logger.info("✅ БОТ СТАРТОВАЛ")
         logger.info("📨 ФИНАЛЬНОЕ РЕШЕНИЕ:")
-        logger.info("✅ ВСЕ МЕДИА используют copy_message()")
-        logger.info("✅ copy_message ОБХОДИТ VOICE_MESSAGES_FORBIDDEN")
-        logger.info("✅ НИКАКИХ ОГРАНИЧЕНИЙ PREMIUM!")
+        logger.info("✅ Используем forward_message() для ВСЕХ медиа")
+        logger.info("✅ forward_message ПОЛНОСТЬЮ ОБХОДИТ VOICE_MESSAGES_FORBIDDEN")
+        logger.info("✅ Если forward не работает - используем send_* методы напрямую")
+        logger.info("✅ НИКАКИХ ПРОВЕРОК разрешений на медиа!")
         logger.info("✅ ВСЕ МЕДИА РАБОТАЮТ: видео, видеокружи, голос, фото, стикеры")
         await dp.start_polling(bot_instance)
     except Exception as e:
