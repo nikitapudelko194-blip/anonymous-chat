@@ -16,7 +16,7 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKe
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.filters.command import Command
-from aiogram.exceptions import TelegramNetworkError, TelegramAPIError, TelegramForbiddenError
+from aiogram.exceptions import TelegramNetworkError, TelegramAPIError, TelegramBadRequest
 
 from bot.config import BOT_TOKEN, DB_PATH
 
@@ -444,6 +444,7 @@ async def send_photo(bot, partner_id, user_id, message):
 async def send_voice(bot, partner_id, user_id, message):
     """
     🔧 Отправка голоса (с обработкой Premium)
+    НОВОЕ: Ловим TelegramBadRequest, не TelegramForbiddenError!
     """
     try:
         await asyncio.wait_for(
@@ -455,12 +456,12 @@ async def send_voice(bot, partner_id, user_id, message):
             timeout=40
         )
         logger.info(f"🎤 ГОЛОС: {user_id} -> {partner_id}")
-        return True  # Отправлено успешно
+        return True
     
-    except TelegramForbiddenError as e:
+    except TelegramBadRequest as e:
         # Обработка Premium-пользователя, который запретил голос
         if "VOICE_MESSAGES_FORBIDDEN" in str(e):
-            logger.warning(f"⚠️ Голос ЗАПРЕЩЕН: {partner_id} (Premium)")
+            logger.warning(f"⚠️ ГОЛОС ЗАПРЕЩЕН: {partner_id} (Premium)")
             return False
         raise
     
@@ -471,6 +472,7 @@ async def send_voice(bot, partner_id, user_id, message):
 async def send_video_note(bot, partner_id, user_id, message):
     """
     🎬 Отправка видеокружочка (send_video_note)
+    НОВОЕ: Ловим TelegramBadRequest!
     """
     try:
         await asyncio.wait_for(
@@ -483,9 +485,12 @@ async def send_video_note(bot, partner_id, user_id, message):
         logger.info(f"🎬 ВИДЕОКРУЖ: {user_id} -> {partner_id}")
         return True
     
-    except TelegramForbiddenError as e:
-        logger.warning(f"⚠️ ВИДЕО ЗАПРЕЩЕНО: {partner_id}")
-        return False
+    except TelegramBadRequest as e:
+        # Обработка Premium-пользователя
+        if "VOICE_MESSAGES_FORBIDDEN" in str(e) or "ROUNDVIDEO" in str(e):
+            logger.warning(f"⚠️ ВИДЕО ЗАПРЕЩЕНО: {partner_id}")
+            return False
+        raise
     
     except asyncio.TimeoutError:
         logger.warning(f"⏱️ ТАЙМАУТ видео")
@@ -505,10 +510,10 @@ async def send_sticker(bot, partner_id, user_id, message):
 
 async def handle_chat_message(message: Message, state: FSMContext):
     """
-    📌 НОВАЯ АРХИТЕКТУРА:
-    - Каждый тип медиа в отдельной функции
-    - Каждая функция имеет свои try-catch
-    - Ошибки обрабатываются с использованием возвратитых статусов
+    📌 КОНЕЧНАЯ ОТПРАВКА ВСЕХ МЕДИА:
+    - Каждый тип в отдельной функции
+    - Каждая функция имеет свои обработчики ошибок
+    - Ошибки TelegramBadRequest обрабатываются правильно!
     """
     global bot_instance, active_chats
     try:
@@ -540,7 +545,7 @@ async def handle_chat_message(message: Message, state: FSMContext):
         elif message.sticker:
             db.save_message(chat_id, user_id, "[😊 Стикер]")
         
-        # 📌 ОТПРАВКА МЕДИА - КАЖДЫЙ ТИП ОТДЕЛЬНО
+        # 📌 ОТПРАВКА МЕДИА - КАЖДЫЙ ТИП ОТДЕЛьНО
         try:
             success = False
             
@@ -555,13 +560,11 @@ async def handle_chat_message(message: Message, state: FSMContext):
             elif message.voice:
                 success = await send_voice(bot_instance, partner_id, user_id, message)
                 if not success:
-                    # Голос был запрещен или ошибка
                     await safe_send_message(user_id, "⚠️ Не удалось отправить голос")
             
             elif message.video_note:
                 success = await send_video_note(bot_instance, partner_id, user_id, message)
                 if not success:
-                    # Видео было запрещено или ошибка
                     await safe_send_message(user_id, "⚠️ Не удалось отправить видео")
             
             elif message.sticker:
@@ -620,9 +623,9 @@ async def main():
         dp.message.register(handle_chat_message, UserStates.in_chat)
         
         logger.info("✅ БОТ СТАРТ")
-        logger.info("📌 НОВАЯ АРХИТЕКТУРА ОТПрАВКи:")
+        logger.info("📌 КОНЕЧНАЯ ОРГАНИЗАЦИЯ:")
         logger.info("✅ Каждый тип медиа - в отдельной функции")
-        logger.info("✅ Каждая функция имеет свой try-catch")
+        logger.info("✅ Обработка TelegramBadRequest (верно!)")
         logger.info("✅ Ошибки не сломают бот")
         await dp.start_polling(bot_instance)
     except Exception as e:
