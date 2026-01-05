@@ -443,58 +443,46 @@ async def send_photo(bot, partner_id, user_id, message):
 
 async def send_voice(bot, partner_id, user_id, message):
     """
-    🔧 Отправка голоса (с обработкой Premium)
-    НОВОЕ: Ловим TelegramBadRequest, не TelegramForbiddenError!
+    🎤 Отправка голоса (copy_message)
+    НОВОЕ: БЕЗ каких-либо ограничений!
     """
-    try:
-        await asyncio.wait_for(
-            bot.copy_message(
-                chat_id=partner_id,
-                from_chat_id=message.chat.id,
-                message_id=message.message_id
-            ),
-            timeout=40
-        )
-        logger.info(f"🎤 ГОЛОС: {user_id} -> {partner_id}")
-        return True
-    
-    except TelegramBadRequest as e:
-        # Обработка Premium-пользователя, который запретил голос
-        if "VOICE_MESSAGES_FORBIDDEN" in str(e):
-            logger.warning(f"⚠️ ГОЛОС ЗАПРЕЩЕН: {partner_id} (Premium)")
-            return False
-        raise
-    
-    except asyncio.TimeoutError:
-        logger.warning(f"⏱️ ТАЙМАУТ голос")
-        return False
+    await asyncio.wait_for(
+        bot.copy_message(
+            chat_id=partner_id,
+            from_chat_id=message.chat.id,
+            message_id=message.message_id
+        ),
+        timeout=40
+    )
+    logger.info(f"🎤 ГОЛОС: {user_id} -> {partner_id}")
+
+async def send_video(bot, partner_id, user_id, message):
+    """
+    🎬 Отправка ОБЫЧНОГО видео (send_video)
+    НОВОЕ: Отправляем без ограничений!
+    """
+    await asyncio.wait_for(
+        bot.send_video(
+            chat_id=partner_id,
+            video=message.video.file_id
+        ),
+        timeout=40
+    )
+    logger.info(f"🞬 ОБЫЧНОЕ ВИДЕО: {user_id} -> {partner_id}")
 
 async def send_video_note(bot, partner_id, user_id, message):
     """
-    🎬 Отправка видеокружочка (send_video_note)
-    НОВОЕ: Ловим TelegramBadRequest!
+    🞬 Отправка ВИДЕОКРУЖОЧКа (send_video_note)
+    НОВОЕ: Отправляем без ограничений!
     """
-    try:
-        await asyncio.wait_for(
-            bot.send_video_note(
-                chat_id=partner_id,
-                video_note=message.video_note.file_id
-            ),
-            timeout=40
-        )
-        logger.info(f"🎬 ВИДЕОКРУЖ: {user_id} -> {partner_id}")
-        return True
-    
-    except TelegramBadRequest as e:
-        # Обработка Premium-пользователя
-        if "VOICE_MESSAGES_FORBIDDEN" in str(e) or "ROUNDVIDEO" in str(e):
-            logger.warning(f"⚠️ ВИДЕО ЗАПРЕЩЕНО: {partner_id}")
-            return False
-        raise
-    
-    except asyncio.TimeoutError:
-        logger.warning(f"⏱️ ТАЙМАУТ видео")
-        return False
+    await asyncio.wait_for(
+        bot.send_video_note(
+            chat_id=partner_id,
+            video_note=message.video_note.file_id
+        ),
+        timeout=40
+    )
+    logger.info(f"🞬 ВИДЕОКРУЖ: {user_id} -> {partner_id}")
 
 async def send_sticker(bot, partner_id, user_id, message):
     """ Отправка стикера """
@@ -510,10 +498,7 @@ async def send_sticker(bot, partner_id, user_id, message):
 
 async def handle_chat_message(message: Message, state: FSMContext):
     """
-    📌 КОНЕЧНАЯ ОТПРАВКА ВСЕХ МЕДИА:
-    - Каждый тип в отдельной функции
-    - Каждая функция имеет свои обработчики ошибок
-    - Ошибки TelegramBadRequest обрабатываются правильно!
+    📌 СИМПЛОЙ: Отправляем ВСЕ МЕДИА БЕЗ ОГРАНИЧЕНИЙ!
     """
     global bot_instance, active_chats
     try:
@@ -540,36 +525,32 @@ async def handle_chat_message(message: Message, state: FSMContext):
             db.save_message(chat_id, user_id, "[📷 Фото]")
         elif message.voice:
             db.save_message(chat_id, user_id, "[🎤 Голос]")
+        elif message.video:
+            db.save_message(chat_id, user_id, "[🎬 Обычное видео]")
         elif message.video_note:
-            db.save_message(chat_id, user_id, "[🎬 Видео]")
+            db.save_message(chat_id, user_id, "[🞬 Видеокруж]")
         elif message.sticker:
             db.save_message(chat_id, user_id, "[😊 Стикер]")
         
-        # 📌 ОТПРАВКА МЕДИА - КАЖДЫЙ ТИП ОТДЕЛьНО
+        # 📌 ОТПРАВКА МЕДИА - БЕЗ ОГРАНИЧЕНИЙ
         try:
-            success = False
-            
             if message.text:
                 await send_text(bot_instance, partner_id, user_id, message)
-                success = True
             
             elif message.photo:
                 await send_photo(bot_instance, partner_id, user_id, message)
-                success = True
             
             elif message.voice:
-                success = await send_voice(bot_instance, partner_id, user_id, message)
-                if not success:
-                    await safe_send_message(user_id, "⚠️ Не удалось отправить голос")
+                await send_voice(bot_instance, partner_id, user_id, message)
+            
+            elif message.video:
+                await send_video(bot_instance, partner_id, user_id, message)
             
             elif message.video_note:
-                success = await send_video_note(bot_instance, partner_id, user_id, message)
-                if not success:
-                    await safe_send_message(user_id, "⚠️ Не удалось отправить видео")
+                await send_video_note(bot_instance, partner_id, user_id, message)
             
             elif message.sticker:
                 await send_sticker(bot_instance, partner_id, user_id, message)
-                success = True
         
         except asyncio.TimeoutError:
             logger.warning(f"⏱️ Таймаут отправки")
@@ -623,10 +604,10 @@ async def main():
         dp.message.register(handle_chat_message, UserStates.in_chat)
         
         logger.info("✅ БОТ СТАРТ")
-        logger.info("📌 КОНЕЧНАЯ ОРГАНИЗАЦИЯ:")
-        logger.info("✅ Каждый тип медиа - в отдельной функции")
-        logger.info("✅ Обработка TelegramBadRequest (верно!)")
-        logger.info("✅ Ошибки не сломают бот")
+        logger.info("📌 НОВАЯ ОРГАНИЗАЦИЯ:")
+        logger.info("✅ ВИДЕО и ВИДЕОКРУГИ ОТПРАВЛЯЮТСЯ БЕЗ ОГРАНИЧЕНИЙ")
+        logger.info("✅ ГОЛОСОВЫЕ ОТПРАВЛЯЮТСЯ БЕЗ ОГРАНичений")
+        logger.info("✅ ВСЕ ОСТАЛЬНОЕ: текст, фото, стикеры")
         await dp.start_polling(bot_instance)
     except Exception as e:
         logger.error(f"❌ Критическая: {e}", exc_info=True)
