@@ -1,3 +1,1 @@
-from .db import Database
-
-__all__ = ['Database']
+"""Database package for anonymous chat bot"""
