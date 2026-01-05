@@ -417,13 +417,98 @@ async def cmd_stop(message: Message, state: FSMContext):
     except Exception as e:
         logger.error(f"❌ Ошибка: {e}")
 
+async def send_text(bot, partner_id, user_id, message):
+    """  Отправка текста """
+    await asyncio.wait_for(
+        bot.copy_message(
+            chat_id=partner_id,
+            from_chat_id=message.chat.id,
+            message_id=message.message_id
+        ),
+        timeout=40
+    )
+    logger.info(f"✅ ТЕКСТ: {user_id} -> {partner_id}")
+
+async def send_photo(bot, partner_id, user_id, message):
+    """ Отправка фото """
+    await asyncio.wait_for(
+        bot.copy_message(
+            chat_id=partner_id,
+            from_chat_id=message.chat.id,
+            message_id=message.message_id
+        ),
+        timeout=40
+    )
+    logger.info(f"📷 ФОТО: {user_id} -> {partner_id}")
+
+async def send_voice(bot, partner_id, user_id, message):
+    """
+    🔧 Отправка голоса (с обработкой Premium)
+    """
+    try:
+        await asyncio.wait_for(
+            bot.copy_message(
+                chat_id=partner_id,
+                from_chat_id=message.chat.id,
+                message_id=message.message_id
+            ),
+            timeout=40
+        )
+        logger.info(f"🎤 ГОЛОС: {user_id} -> {partner_id}")
+        return True  # Отправлено успешно
+    
+    except TelegramForbiddenError as e:
+        # Обработка Premium-пользователя, который запретил голос
+        if "VOICE_MESSAGES_FORBIDDEN" in str(e):
+            logger.warning(f"⚠️ Голос ЗАПРЕЩЕН: {partner_id} (Premium)")
+            return False
+        raise
+    
+    except asyncio.TimeoutError:
+        logger.warning(f"⏱️ ТАЙМАУТ голос")
+        return False
+
+async def send_video_note(bot, partner_id, user_id, message):
+    """
+    🎬 Отправка видеокружочка (send_video_note)
+    """
+    try:
+        await asyncio.wait_for(
+            bot.send_video_note(
+                chat_id=partner_id,
+                video_note=message.video_note.file_id
+            ),
+            timeout=40
+        )
+        logger.info(f"🎬 ВИДЕОКРУЖ: {user_id} -> {partner_id}")
+        return True
+    
+    except TelegramForbiddenError as e:
+        logger.warning(f"⚠️ ВИДЕО ЗАПРЕЩЕНО: {partner_id}")
+        return False
+    
+    except asyncio.TimeoutError:
+        logger.warning(f"⏱️ ТАЙМАУТ видео")
+        return False
+
+async def send_sticker(bot, partner_id, user_id, message):
+    """ Отправка стикера """
+    await asyncio.wait_for(
+        bot.copy_message(
+            chat_id=partner_id,
+            from_chat_id=message.chat.id,
+            message_id=message.message_id
+        ),
+        timeout=40
+    )
+    logger.info(f"😊 СТИКЕР: {user_id} -> {partner_id}")
+
 async def handle_chat_message(message: Message, state: FSMContext):
     """
-    ✅ ОНОВЛЕНО: Правильная отправка всех типов медиа
-    - голос (с обработкой Premium-пользователей)
-    - видеокружочки
-    - фото
-    - стикеры
+    📌 НОВАЯ АРХИТЕКТУРА:
+    - Каждый тип медиа в отдельной функции
+    - Каждая функция имеет свои try-catch
+    - Ошибки обрабатываются с использованием возвратитых статусов
     """
     global bot_instance, active_chats
     try:
@@ -455,97 +540,43 @@ async def handle_chat_message(message: Message, state: FSMContext):
         elif message.sticker:
             db.save_message(chat_id, user_id, "[😊 Стикер]")
         
-        # 📌 ОТПРАВКА МЕДИА - КАЖДЫЙ ТИП СВОИМ МЕТОДОМ
+        # 📌 ОТПРАВКА МЕДИА - КАЖДЫЙ ТИП ОТДЕЛЬНО
         try:
-            # ===== ТЕКСТ =====
+            success = False
+            
             if message.text:
-                await asyncio.wait_for(
-                    bot_instance.copy_message(
-                        chat_id=partner_id,
-                        from_chat_id=message.chat.id,
-                        message_id=message.message_id
-                    ),
-                    timeout=40
-                )
-                logger.info(f"✅ ТЕКСТ: {user_id} -> {partner_id}")
+                await send_text(bot_instance, partner_id, user_id, message)
+                success = True
             
-            # ===== ФОТО =====
             elif message.photo:
-                await asyncio.wait_for(
-                    bot_instance.copy_message(
-                        chat_id=partner_id,
-                        from_chat_id=message.chat.id,
-                        message_id=message.message_id
-                    ),
-                    timeout=40
-                )
-                logger.info(f"📷 ФОТО: {user_id} -> {partner_id}")
+                await send_photo(bot_instance, partner_id, user_id, message)
+                success = True
             
-            # ===== ГОЛОСОВОЕ ПРИ ОБНОРМАЛЬНЫХ ПОЛьЗОВАТЕЛЯХ =====
             elif message.voice:
-                try:
-                    # Пытаемся отправить через copy_message
-                    await asyncio.wait_for(
-                        bot_instance.copy_message(
-                            chat_id=partner_id,
-                            from_chat_id=message.chat.id,
-                            message_id=message.message_id
-                        ),
-                        timeout=40
-                    )
-                    logger.info(f"🎤 ГОЛОС: {user_id} -> {partner_id}")
-                
-                except TelegramForbiddenError as e:
-                    # Если это VOICE_MESSAGES_FORBIDDEN - Premium режим
-                    if "VOICE_MESSAGES_FORBIDDEN" in str(e):
-                        logger.warning(f"⚠️ Голос блокирован: {partner_id} - Premium пользователь")
-                        await safe_send_message(user_id, "⚠️ Собеседник запретил голосовые")
-                    else:
-                        raise
-                
-                except asyncio.TimeoutError:
-                    logger.warning(f"⏱️ Таймаут голос")
-                    await safe_send_message(user_id, "⏱️ Ошибка передачи голоса")
+                success = await send_voice(bot_instance, partner_id, user_id, message)
+                if not success:
+                    # Голос был запрещен или ошибка
+                    await safe_send_message(user_id, "⚠️ Не удалось отправить голос")
             
-            # ===== ВИДЕОКРУЖОЧКИ (send_video_note) =====
             elif message.video_note:
-                try:
-                    await asyncio.wait_for(
-                        bot_instance.send_video_note(
-                            chat_id=partner_id,
-                            video_note=message.video_note.file_id
-                        ),
-                        timeout=40
-                    )
-                    logger.info(f"🎬 ВИДЕОКРУЖ: {user_id} -> {partner_id}")
-                
-                except TelegramForbiddenError as e:
-                    # Премиум пользователь запретил
-                    logger.warning(f"⚠️ Видео блокировано: {partner_id}")
-                    await safe_send_message(user_id, "⚠️ Собеседник не принимает видео")
-                
-                except asyncio.TimeoutError:
-                    logger.warning(f"⏱️ Таймаут видео")
-                    await safe_send_message(user_id, "⏱️ Ошибка передачи видео")
+                success = await send_video_note(bot_instance, partner_id, user_id, message)
+                if not success:
+                    # Видео было запрещено или ошибка
+                    await safe_send_message(user_id, "⚠️ Не удалось отправить видео")
             
-            # ===== СТИКЕРЫ =====
             elif message.sticker:
-                await asyncio.wait_for(
-                    bot_instance.copy_message(
-                        chat_id=partner_id,
-                        from_chat_id=message.chat.id,
-                        message_id=message.message_id
-                    ),
-                    timeout=40
-                )
-                logger.info(f"😊 СТИКЕР: {user_id} -> {partner_id}")
+                await send_sticker(bot_instance, partner_id, user_id, message)
+                success = True
         
+        except asyncio.TimeoutError:
+            logger.warning(f"⏱️ Таймаут отправки")
+            await safe_send_message(user_id, "⏱️ Ошибка таймаута")
         except Exception as send_error:
-            logger.error(f"❌ Ошибка отправки: {send_error}")
+            logger.error(f"❌ Ошибка отправки: {send_error}", exc_info=True)
             await safe_send_message(user_id, "❌ Не удалось отправить")
     
     except Exception as e:
-        logger.error(f"❌ Критическая ошибка: {e}", exc_info=True)
+        logger.error(f"❌ Критическая: {e}", exc_info=True)
 
 async def cmd_search_callback(callback: CallbackQuery, state: FSMContext):
     global user_fsm_contexts
@@ -589,12 +620,10 @@ async def main():
         dp.message.register(handle_chat_message, UserStates.in_chat)
         
         logger.info("✅ БОТ СТАРТ")
-        logger.info("📱 МЕДИА:")
-        logger.info("✅ ТЕКСТ: copy_message")
-        logger.info("📷 ФОТО: copy_message")
-        logger.info("🎤 ГОЛОС: copy_message + обработка Premium")
-        logger.info("🎬 ВИДЕО: send_video_note + обработка ошибок")
-        logger.info("😊 СТИКЕРЫ: copy_message")
+        logger.info("📌 НОВАЯ АРХИТЕКТУРА ОТПрАВКи:")
+        logger.info("✅ Каждый тип медиа - в отдельной функции")
+        logger.info("✅ Каждая функция имеет свой try-catch")
+        logger.info("✅ Ошибки не сломают бот")
         await dp.start_polling(bot_instance)
     except Exception as e:
         logger.error(f"❌ Критическая: {e}", exc_info=True)
