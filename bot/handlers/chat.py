@@ -126,6 +126,7 @@ async def select_category(
         "📸 <b>В диалоге можно делиться:</b>\n"
         "📷 Фотографиями\n"
         "🎞 Голосовыми сообщениями\n"
+        "🎬 Видео и видеокружками\n"
         "👽 Стикерами\n\n"
         "/stop - завершить\n"
         "/new - новый чат\n"
@@ -144,6 +145,7 @@ async def select_category(
             "📸 <b>В диалоге можно делиться:</b>\n"
             "📷 Фотографиями\n"
             "🎞 Голосовыми сообщениями\n"
+            "🎬 Видео и видеокружками\n"
             "👽 Стикерами\n\n"
             "/stop - завершить\n"
             "/new - новый чат\n"
@@ -183,7 +185,7 @@ async def handle_chat_message(
     message: types.Message,
     state: FSMContext
 ):
-    """Обработать сообщения в чате (текст, фото, голос, стикер) и команды."""
+    """Обработать сообщения в чате (текст, фото, видео, голос, стикер) и команды."""
     
     # Команды
     if message.text and message.text == '/stop':
@@ -216,6 +218,12 @@ async def handle_chat_message(
     elif message.voice:
         message_type = 'voice'
         db_content = f"[🎞 Голос]"
+    elif message.video:
+        message_type = 'video'
+        db_content = f"[🎬 Видео]"
+    elif message.video_note:
+        message_type = 'video_note'
+        db_content = f"[🎥 Видеокруж]"
     elif message.sticker:
         message_type = 'sticker'
         db_content = f"[👽 Стикер]"
@@ -234,7 +242,7 @@ async def handle_chat_message(
     except Exception as e:
         print(f"❌ Ошибка сохранения: {e}")
     
-    # 📤 Отправить собеседнику (НОВОЕ СООБЩЕНИЕ, не редактирование!)
+    # 📤 Отправить собеседнику
     try:
         if message_type == 'text':
             # Текстовое сообщение
@@ -256,6 +264,19 @@ async def handle_chat_message(
             await bot.send_voice(
                 other_user,
                 message.voice.file_id
+            )
+        elif message_type == 'video':
+            # ✅ ВИДЕО БЕЗ ОГРАНИЧЕНИЙ
+            await bot.send_video(
+                other_user,
+                message.video.file_id,
+                caption=f"🎬 {message.caption}" if message.caption else None
+            )
+        elif message_type == 'video_note':
+            # ✅ ВИДЕОКРУЖ БЕЗ ОГРАНИЧЕНИЙ
+            await bot.send_video_note(
+                other_user,
+                message.video_note.file_id
             )
         elif message_type == 'sticker':
             # Стикер
