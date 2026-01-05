@@ -1,1 +1,1 @@
-# Filters package
+"""Filters package for anonymous chat bot"""
