@@ -1,3 +1,1 @@
-from .user_states import UserStates
-
-__all__ = ['UserStates']
+"""States package for anonymous chat bot FSM"""
