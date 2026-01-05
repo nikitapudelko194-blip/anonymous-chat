@@ -202,7 +202,6 @@ class Database:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            # 🔧 Исправлено: Кавычки двойные снаружи
             cursor.execute('''
                 UPDATE chats SET status = "ended", ended_at = CURRENT_TIMESTAMP
                 WHERE chat_id = ?
@@ -310,7 +309,7 @@ async def find_partner(user_id: int, category: str, search_filters: dict, bot: B
 def get_main_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔥 Поиск", callback_data="search_start")],
-        [InlineKeyboardButton(text="👤 По полу", callback_data="search_gender")],
+        [InlineKeyboardButton(text="🧑 По полу", callback_data="search_gender")],
         [InlineKeyboardButton(text="💬 Интересы", callback_data="choose_interests")],
     ])
 
@@ -419,7 +418,7 @@ async def cmd_stop(message: Message, state: FSMContext):
         logger.error(f"❌ Ошибка: {e}")
 
 async def handle_chat_message(message: Message, state: FSMContext):
-    """🔧 ОНОВЛЕНО: ОТПРАВКА МЕДИА ЧЕРЕЗ copy_message"""
+    """🎬 ОБНОВЛЕНО: Правильная отправка видеокружочков через send_video_note"""
     global bot_instance, active_chats
     try:
         user_id = message.from_user.id
@@ -450,26 +449,65 @@ async def handle_chat_message(message: Message, state: FSMContext):
         elif message.sticker:
             db.save_message(chat_id, user_id, "[😊 Стикер]")
         
-        # 🔧 ОТПРАВКА КОПИЕЙ МОУА (СОХРАНЯЕТ ВСЕ МЕДИА)
+        # 🎬 ОТПРАВКА МЕДИА - РАЗНЫЕ МЕТОДЫ ДЛЯ РАЗНЫХ ТИПОВ
         try:
-            await asyncio.wait_for(
-                bot_instance.copy_message(
-                    chat_id=partner_id,
-                    from_chat_id=message.chat.id,
-                    message_id=message.message_id
-                ),
-                timeout=40
-            )
-            
+            # ✅ ТЕКСТ - copy_message
             if message.text:
+                await asyncio.wait_for(
+                    bot_instance.copy_message(
+                        chat_id=partner_id,
+                        from_chat_id=message.chat.id,
+                        message_id=message.message_id
+                    ),
+                    timeout=40
+                )
                 logger.info(f"✅ Текст: {user_id} -> {partner_id}")
+            
+            # ✅ ФОТО - copy_message
             elif message.photo:
+                await asyncio.wait_for(
+                    bot_instance.copy_message(
+                        chat_id=partner_id,
+                        from_chat_id=message.chat.id,
+                        message_id=message.message_id
+                    ),
+                    timeout=40
+                )
                 logger.info(f"✅ Фото: {user_id} -> {partner_id}")
+            
+            # ✅ ГОЛОС - copy_message
             elif message.voice:
+                await asyncio.wait_for(
+                    bot_instance.copy_message(
+                        chat_id=partner_id,
+                        from_chat_id=message.chat.id,
+                        message_id=message.message_id
+                    ),
+                    timeout=40
+                )
                 logger.info(f"🎤 Голос: {user_id} -> {partner_id}")
+            
+            # 🎬 ВИДЕОКРУЖОЧКИ - send_video_note (НЕ copy_message!)
             elif message.video_note:
-                logger.info(f"🎬 Видео: {user_id} -> {partner_id}")
+                await asyncio.wait_for(
+                    bot_instance.send_video_note(
+                        chat_id=partner_id,
+                        video_note=message.video_note.file_id  # Используем file_id
+                    ),
+                    timeout=40
+                )
+                logger.info(f"🎬 Видеокружочек: {user_id} -> {partner_id}")
+            
+            # ✅ СТИКЕРЫ - copy_message
             elif message.sticker:
+                await asyncio.wait_for(
+                    bot_instance.copy_message(
+                        chat_id=partner_id,
+                        from_chat_id=message.chat.id,
+                        message_id=message.message_id
+                    ),
+                    timeout=40
+                )
                 logger.info(f"😊 Стикер: {user_id} -> {partner_id}")
         
         except asyncio.TimeoutError:
@@ -524,7 +562,8 @@ async def main():
         dp.message.register(handle_chat_message, UserStates.in_chat)
         
         logger.info("✅ Бот старт")
-        logger.info("💌 МЕДИА активна: голос, видео, фото")
+        logger.info("📱 МЕДИА активна: голос, видео, фото, стикеры")
+        logger.info("🎬 Видеокружочки: send_video_note (правильно!)")
         await dp.start_polling(bot_instance)
     except Exception as e:
         logger.error(f"❌ Критическая: {e}", exc_info=True)
