@@ -338,13 +338,6 @@ def get_chat_actions_keyboard():
         [InlineKeyboardButton(text="❌ Завершить", callback_data="end_chat")],
     ])
 
-def get_rating_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="👍 Нравится", callback_data="vote_positive"), 
-         InlineKeyboardButton(text="👎 Не", callback_data="vote_negative")],
-        [InlineKeyboardButton(text="➡️ Новый", callback_data="search_start")],
-    ])
-
 async def safe_send_message(chat_id, text, reply_markup=None, timeout=30):
     global bot_instance
     try:
@@ -444,7 +437,7 @@ async def send_photo(bot, partner_id, user_id, message):
 async def send_voice(bot, partner_id, user_id, message):
     """
     🎤 Отправка голоса (copy_message)
-    НОВОЕ: БЕЗ каких-либо ограничений!
+    БЕЗ каких-либо ограничений!
     """
     await asyncio.wait_for(
         bot.copy_message(
@@ -459,7 +452,7 @@ async def send_voice(bot, partner_id, user_id, message):
 async def send_video(bot, partner_id, user_id, message):
     """
     🎬 Отправка ОБЫЧНОГО видео (send_video)
-    НОВОЕ: Отправляем без ограничений!
+    БЕЗ ограничений!
     """
     await asyncio.wait_for(
         bot.send_video(
@@ -468,21 +461,45 @@ async def send_video(bot, partner_id, user_id, message):
         ),
         timeout=40
     )
-    logger.info(f"🞬 ОБЫЧНОЕ ВИДЕО: {user_id} -> {partner_id}")
+    logger.info(f"🎬 ОБЫЧНОЕ ВИДЕО: {user_id} -> {partner_id}")
 
 async def send_video_note(bot, partner_id, user_id, message):
     """
-    🞬 Отправка ВИДЕОКРУЖОЧКа (send_video_note)
-    НОВОЕ: Отправляем без ограничений!
+    🎬 Отправка ВИДЕОКРУЖКА (send_video_note)
+    ФИКСАЦИЯ: Если у получателя есть ограничение, отправляем обычное видео!
     """
-    await asyncio.wait_for(
-        bot.send_video_note(
-            chat_id=partner_id,
-            video_note=message.video_note.file_id
-        ),
-        timeout=40
-    )
-    logger.info(f"🞬 ВИДЕОКРУЖ: {user_id} -> {partner_id}")
+    try:
+        await asyncio.wait_for(
+            bot.send_video_note(
+                chat_id=partner_id,
+                video_note=message.video_note.file_id
+            ),
+            timeout=40
+        )
+        logger.info(f"🎬 ВИДЕОКРУЖ (успешно): {user_id} -> {partner_id}")
+    
+    except TelegramBadRequest as e:
+        # ❌ У получателя есть ограничение на видеокружки
+        if "VOICE_MESSAGES_FORBIDDEN" in str(e):
+            logger.warning(f"⚠️  У {partner_id} запрещены видеокружки. Отправляем обычное видео...")
+            
+            # 📌 FALLBACK: Отправляем обычное видео вместо кружка
+            try:
+                await asyncio.wait_for(
+                    bot.send_video(
+                        chat_id=partner_id,
+                        video=message.video_note.file_id
+                    ),
+                    timeout=40
+                )
+                logger.info(f"✅ ВИДЕОКРУЖ → ВИДЕО (fallback): {user_id} -> {partner_id}")
+            except Exception as fallback_error:
+                logger.error(f"❌ Fallback ошибка: {fallback_error}")
+                raise
+        else:
+            # Другие ошибки
+            logger.error(f"❌ Другая ошибка видеокружка: {e}")
+            raise
 
 async def send_sticker(bot, partner_id, user_id, message):
     """ Отправка стикера """
@@ -498,7 +515,8 @@ async def send_sticker(bot, partner_id, user_id, message):
 
 async def handle_chat_message(message: Message, state: FSMContext):
     """
-    📌 СИМПЛОЙ: Отправляем ВСЕ МЕДИА БЕЗ ОГРАНИЧЕНИЙ!
+    📬 ОБРАБОТКА: Отправляем ВСЕ МЕДИА БЕЗ ОГРАНИЧЕНИЙ!
+    НОВОЕ: Если видеокружок не прошел - отправляем обычное видео (fallback)
     """
     global bot_instance, active_chats
     try:
@@ -528,11 +546,11 @@ async def handle_chat_message(message: Message, state: FSMContext):
         elif message.video:
             db.save_message(chat_id, user_id, "[🎬 Обычное видео]")
         elif message.video_note:
-            db.save_message(chat_id, user_id, "[🞬 Видеокруж]")
+            db.save_message(chat_id, user_id, "[🎬 Видеокруж]")
         elif message.sticker:
             db.save_message(chat_id, user_id, "[😊 Стикер]")
         
-        # 📌 ОТПРАВКА МЕДИА - БЕЗ ОГРАНИЧЕНИЙ
+        # 📬 ОТПРАВКА МЕДИА - БЕЗ ОГРАНИЧЕНИЙ
         try:
             if message.text:
                 await send_text(bot_instance, partner_id, user_id, message)
@@ -547,6 +565,7 @@ async def handle_chat_message(message: Message, state: FSMContext):
                 await send_video(bot_instance, partner_id, user_id, message)
             
             elif message.video_note:
+                # 🎯 НОВОЕ: С FALLBACK логикой!
                 await send_video_note(bot_instance, partner_id, user_id, message)
             
             elif message.sticker:
@@ -604,9 +623,10 @@ async def main():
         dp.message.register(handle_chat_message, UserStates.in_chat)
         
         logger.info("✅ БОТ СТАРТ")
-        logger.info("📌 НОВАЯ ОРГАНИЗАЦИЯ:")
-        logger.info("✅ ВИДЕО и ВИДЕОКРУГИ ОТПРАВЛЯЮТСЯ БЕЗ ОГРАНИЧЕНИЙ")
-        logger.info("✅ ГОЛОСОВЫЕ ОТПРАВЛЯЮТСЯ БЕЗ ОГРАНичений")
+        logger.info("📬 НОВАЯ ЛОГИКА:")
+        logger.info("✅ ВИДЕО И ВИДЕОКРУЖИ ОТПРАВЛЯЮТСЯ БЕЗ ОГРАНИЧЕНИЙ")
+        logger.info("✅ ЕСЛИ ВИДЕОКРУЖ НЕ ПРОШЕЛ → FALLBACK НА ОБЫЧНОЕ ВИДЕО")
+        logger.info("✅ ГОЛОСОВЫЕ ОТПРАВЛЯЮТСЯ БЕЗ ОГРАНИЧЕНИЙ")
         logger.info("✅ ВСЕ ОСТАЛЬНОЕ: текст, фото, стикеры")
         await dp.start_polling(bot_instance)
     except Exception as e:
