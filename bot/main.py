@@ -781,7 +781,7 @@ async def cmd_help(message: Message, state: FSMContext):
     except Exception as e:
         logger.error(f"❌ Ошибка в cmd_help: {e}")
 
-# ОБНОВЛЕННЫЕ ОБРАБОТЧИКИ ДЛЯ ПОДДЕРКИ Round Video
+# ОБНОВЛЕННЫЕ ОБРАБОТЧИКИ ДЛЯ ПОДДЕРКИ Round Video И ГОЛОСОВЫХ СООБЩЕНИЙ
 
 async def handle_chat_message(message: Message, state: FSMContext):
     """Обработать сообщение в чате (текст, фото, голос, стикер, видеокружок)"""
@@ -838,16 +838,24 @@ async def handle_chat_message(message: Message, state: FSMContext):
                 # Фотография
                 await asyncio.wait_for(
                     bot_instance.send_photo(partner_id, message.photo[-1].file_id, caption=message.caption or "📷"),
-                    timeout=20
+                    timeout=30  # Увеличен timeout для фото
                 )
                 logger.info(f"✅ Фото от {user_id} отправлено {partner_id}")
             elif message.voice:
-                # Голосовое сообщение
+                # Голосовое сообщение - ИСПРАВЛЕННАЯ ОБРАБОТКА
+                logger.info(f"🎤 Обработка голоса от {user_id}...")
+                logger.debug(f"   File ID: {message.voice.file_id}")
+                logger.debug(f"   Duration: {message.voice.duration}s")
+                
                 await asyncio.wait_for(
-                    bot_instance.send_voice(partner_id, message.voice.file_id),
-                    timeout=20
+                    bot_instance.send_voice(
+                        partner_id,
+                        message.voice.file_id,
+                        duration=message.voice.duration  # Сохраняем оригинальную длительность
+                    ),
+                    timeout=40  # Увеличен timeout для голоса (до 40 сек для больших файлов)
                 )
-                logger.info(f"✅ Голос от {user_id} отправлен {partner_id}")
+                logger.info(f"✅ Голос от {user_id} успешно отправлен {partner_id}")
             elif message.sticker:
                 # Стикер
                 await asyncio.wait_for(
@@ -859,15 +867,15 @@ async def handle_chat_message(message: Message, state: FSMContext):
                 # Видеокружок (НОВО!)
                 await asyncio.wait_for(
                     bot_instance.send_video_note(partner_id, message.video_note.file_id),
-                    timeout=20
+                    timeout=40  # Увеличен timeout для видео
                 )
                 logger.info(f"✅ Видеокружок от {user_id} отправлен {partner_id}")
         except asyncio.TimeoutError:
-            logger.warning(f"⏱️ Таймаут при отправке сообщения партнёру {partner_id}")
-            await safe_send_message(user_id, "⏱️ Проблема с отправкой (таймаут). Попробуйте еще раз.")
+            logger.warning(f"⏱️ Таймаут при отправке медиа от {user_id} партнёру {partner_id}")
+            await safe_send_message(user_id, "⏱️ Проблема с отправкой (таймаут). Файл слишком большой или слабое соединение. Попробуйте еще раз.")
         except Exception as send_error:
-            logger.error(f"❌ Ошибка отправки сообщения партнёру {partner_id}: {send_error}")
-            await safe_send_message(user_id, "❌ Ошибка отправки сообщения. Возможно, собеседник вышел из чата.")
+            logger.error(f"❌ Ошибка отправки медиа от {user_id} партнёру {partner_id}: {send_error}", exc_info=True)
+            await safe_send_message(user_id, "❌ Ошибка отправки сообщения. Возможно, собеседник вышел из чата или файл повреждён.")
             db.end_chat(chat_id)
             active_chats.pop(user_id, None)
             active_chats.pop(partner_id, None)
@@ -971,6 +979,7 @@ async def main():
         dp.message.register(handle_chat_message, UserStates.in_chat)  # Текстовые сообщения
         
         logger.info("✅ Бот запущен и готов к работе!")
+        logger.info("🎤 Поддержка голосовых сообщений активирована!")
         logger.info("🎞 Поддержка video_note (видеокружок) активирована!")
         
         # Запустить бота
