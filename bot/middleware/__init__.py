@@ -1,1 +1,1 @@
-# Middleware package
+"""Middleware package for anonymous chat bot"""
