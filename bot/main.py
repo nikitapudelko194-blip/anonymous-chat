@@ -202,11 +202,16 @@ class Database:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            cursor.execute('UPDATE chats SET status = 'ended', ended_at = CURRENT_TIMESTAMP WHERE chat_id = ?', (chat_id,))
+            # 🔧 Исправлено: Кавычки двойные снаружи
+            cursor.execute('''
+                UPDATE chats SET status = "ended", ended_at = CURRENT_TIMESTAMP
+                WHERE chat_id = ?
+            ''', (chat_id,))
             conn.commit()
             conn.close()
+            logger.info(f"✅ Чат {chat_id} закончен")
         except Exception as e:
-            logger.error(f"❌ Ошибка: {e}")
+            logger.error(f"❌ Ошибка end_chat: {e}")
     
     def save_report(self, chat_id, reporter_id, reported_user_id, reason):
         try:
@@ -414,7 +419,7 @@ async def cmd_stop(message: Message, state: FSMContext):
         logger.error(f"❌ Ошибка: {e}")
 
 async def handle_chat_message(message: Message, state: FSMContext):
-    """🔧 MAIN: ОТПРАВКА МЕДИА ЧЕРЕЗ copy_message"""
+    """🔧 ОНОВЛЕНО: ОТПРАВКА МЕДИА ЧЕРЕЗ copy_message"""
     global bot_instance, active_chats
     try:
         user_id = message.from_user.id
