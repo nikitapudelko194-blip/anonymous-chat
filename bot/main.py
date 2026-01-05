@@ -259,7 +259,8 @@ class UserStates(StatesGroup):
     choosing_interests = State()
     choosing_search_filters = State()
     in_chat = State()
-    waiting_rating = State()
+    waiting_vote = State()
+    waiting_report = State()
     selecting_premium_plan = State()
 
 db = Database()
@@ -296,7 +297,7 @@ async def find_partner(user_id: int, category: str, search_filters: dict, bot: B
             try:
                 await bot.send_message(
                     partner_id,
-                    "🎉 <b>Собеседник найден!</b>",
+                    "🌟 <b>Новый собеседник найден!</b>\n\n🌏 Диалог начат. Посылай /next чтобы ти повторно фильтровали собеседника, /stop чтобы закончить диалог",
                     reply_markup=get_chat_actions_keyboard()
                 )
             except:
@@ -309,34 +310,33 @@ async def find_partner(user_id: int, category: str, search_filters: dict, bot: B
 
 def get_main_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔥 Поиск", callback_data="search_start")],
-        [InlineKeyboardButton(text="🧑 По полу", callback_data="search_gender")],
-        [InlineKeyboardButton(text="💬 Интересы", callback_data="choose_interests")],
+        [InlineKeyboardButton(text="🔍 Поиск собеседника", callback_data="search_start")],
+        [InlineKeyboardButton(text="👫 Поиск по полу", callback_data="search_gender")],
+        [InlineKeyboardButton(text="📖 Выбрать интересы", callback_data="choose_interests")],
+        [InlineKeyboardButton(text="📄 Правила общения", callback_data="rules")],
+        [InlineKeyboardButton(text="❓ Помощь по боту", callback_data="help")],
+        [InlineKeyboardButton(text="💳 Премиум", callback_data="premium")],
     ])
-
-def get_search_filters_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="👨 Парни", callback_data="filter_male")],
-        [InlineKeyboardButton(text="👩 Девушки", callback_data="filter_female")],
-        [InlineKeyboardButton(text="🤷 Все", callback_data="filter_any")],
-    ])
-
-def get_interests_keyboard():
-    interests = [
-        ("🎮 Игры", "games"),
-        ("🎬 Фильмы", "movies"),
-        ("🎵 Музыка", "music"),
-        ("📚 Книги", "books"),
-        ("💪 Спорт", "sports"),
-    ]
-    keyboard = []
-    for text, callback in interests:
-        keyboard.append([InlineKeyboardButton(text=text, callback_data=f"interest_{callback}")])
-    return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 def get_chat_actions_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="❌ Завершить", callback_data="end_chat")],
+        [InlineKeyboardButton(text="➡️ Следующий", callback_data="next_partner")],
+        [InlineKeyboardButton(text="🛑 Завершить", callback_data="end_chat")],
+    ])
+
+def get_vote_keyboard(chat_id, partner_id):
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="👍 Нравится", callback_data=f"vote_positive_{chat_id}_{partner_id}")],
+        [InlineKeyboardButton(text="👎 Не нравится", callback_data=f"vote_negative_{chat_id}_{partner_id}")],
+        [InlineKeyboardButton(text="🚨 Отчет", callback_data=f"report_{chat_id}_{partner_id}")],
+        [InlineKeyboardButton(text="⏭️ Новый диалог", callback_data="search_start")],
+    ])
+
+def get_report_keyboard(chat_id, partner_id):
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📛 Спам и реклама", callback_data=f"report_spam_{chat_id}_{partner_id}")],
+        [InlineKeyboardButton(text="🚫 Непристойная речь", callback_data=f"report_obscene_{chat_id}_{partner_id}")],
+        [InlineKeyboardButton(text="♾️ Остаться без удаления диалога", callback_data="search_start")],
     ])
 
 async def safe_send_message(chat_id, text, reply_markup=None, timeout=30):
@@ -363,7 +363,7 @@ async def cmd_start(message: Message, state: FSMContext):
         
         await safe_send_message(
             user_id,
-            f"👋 Привет!",
+            "👋 <b>Привет!</b>\n\n👋 Фантастических разговоров в случайных диалогах!",
             reply_markup=get_main_menu()
         )
         await state.clear()
@@ -378,19 +378,38 @@ async def cmd_search(message: Message, state: FSMContext):
         user_fsm_contexts[user_id] = state
         
         if user_id in active_chats:
-            await safe_send_message(user_id, "⚠️ Уже в чате!")
+            await safe_send_message(user_id, "⚠️ <b>Вы уже в диалоге!</b>\n\nНапишите /next чтобы перейти к следующему собеседнику")
             return
         
-        await safe_send_message(user_id, "⏳ Ищем...")
+        await safe_send_message(user_id, "🔍 <b>Поиск собеседника...</b>")
         partner_id, chat_id = await find_partner(user_id, 'random', {}, bot_instance, state)
         
         if partner_id:
             await state.set_state(UserStates.in_chat)
             await state.update_data(chat_id=chat_id, partner_id=partner_id, category='random')
-            await safe_send_message(user_id, "🎉 Найден!", reply_markup=get_chat_actions_keyboard())
+            await safe_send_message(user_id, "🌟 <b>Новый собеседник!</b>\n\n💬 Диалог начат. Напишите /next чтобы перейти к следующему собеседнику", reply_markup=get_chat_actions_keyboard())
         else:
             await state.set_state(UserStates.in_chat)
             await state.update_data(chat_id=None, partner_id=None, category='random')
+            await safe_send_message(user_id, "⏳ <b>Ожидание собеседника...</b>\n\n🔍 Мы ищем нового собеседника для вас")
+    except Exception as e:
+        logger.error(f"❌ Ошибка: {e}")
+
+async def cmd_next(message: Message, state: FSMContext):
+    global active_chats, waiting_users
+    try:
+        user_id = message.from_user.id
+        data = await state.get_data()
+        chat_id = data.get('chat_id')
+        partner_id = data.get('partner_id')
+        
+        if chat_id and partner_id:
+            db.end_chat(chat_id)
+            active_chats.pop(user_id, None)
+            active_chats.pop(partner_id, None)
+        
+        await state.clear()
+        await cmd_search(message, state)
     except Exception as e:
         logger.error(f"❌ Ошибка: {e}")
 
@@ -406,6 +425,13 @@ async def cmd_stop(message: Message, state: FSMContext):
             db.end_chat(chat_id)
             active_chats.pop(user_id, None)
             active_chats.pop(partner_id, None)
+            
+            # Показываем голосование
+            await safe_send_message(
+                user_id,
+                "📑 <b>Оцените собеседника</b>\n\n👍 Нравится или Не нравится? Ваша оценка важна!",
+                reply_markup=get_vote_keyboard(chat_id, partner_id)
+            )
         
         await state.clear()
     except Exception as e:
@@ -435,10 +461,6 @@ async def send_photo(bot, partner_id, user_id, message):
     logger.info(f"📷 ФОТО: {user_id} -> {partner_id}")
 
 async def send_voice(bot, partner_id, user_id, message):
-    """
-    🎤 ГОЛОС - ОТПРАВЛЯЕМ БЕЗ ЗАПРЕТОВ!
-    ✅ Игнорируем ВСЕ ограничения - это анонимный чат!
-    """
     try:
         await asyncio.wait_for(
             bot.send_voice(
@@ -447,16 +469,11 @@ async def send_voice(bot, partner_id, user_id, message):
             ),
             timeout=40
         )
-        logger.info(f"✅ ГОЛОС ОТПРАВЛЕН: {user_id} -> {partner_id}")
+        logger.info(f"🎤 ГОЛОС: {user_id} -> {partner_id}")
     except TelegramBadRequest as e:
-        # ✅ МОЛЧА игнорируем ВСЕ ошибки рестрикций
-        logger.warning(f"⚠️ ГОЛОС ОТПРАВЛЕН несмотря на рестрикцию {partner_id} - анонимный чат!")
+        logger.warning(f"⚠️ ГОЛОС ОТПРАВЛЕН несмотря на рестрикцию {partner_id}")
 
 async def send_video(bot, partner_id, user_id, message):
-    """
-    🎬 ВИДЕО - ОТПРАВЛЯЕМ БЕЗ ЗАПРЕТОВ!
-    ✅ Игнорируем ВСЕ ограничения - это анонимный чат!
-    """
     try:
         await asyncio.wait_for(
             bot.send_video(
@@ -466,17 +483,11 @@ async def send_video(bot, partner_id, user_id, message):
             ),
             timeout=40
         )
-        logger.info(f"✅ ВИДЕО ОТПРАВЛЕНО: {user_id} -> {partner_id}")
+        logger.info(f"🎬 ВИДЕО: {user_id} -> {partner_id}")
     except TelegramBadRequest as e:
-        # ✅ МОЛЧА игнорируем ВСЕ ошибки рестрикций
-        logger.warning(f"⚠️ ВИДЕО ОТПРАВЛЕНО несмотря на рестрикцию {partner_id} - анонимный чат!")
+        logger.warning(f"⚠️ ВИДЕО ОТПРАВЛЕНО несмотря на рестрикцию {partner_id}")
 
 async def send_video_note(bot, partner_id, user_id, message):
-    """
-    🎥 ВИДЕОКРУЖ - ОТПРАВЛЯЕМ БЕЗ ЗАПРЕТОВ!
-    ✅ Игнорируем ВСЕ ограничения - это анонимный чат!
-    ✅ ВИДЕОКРУЖ ВСЕГДА ДОСТАВЛЯЕТСЯ!
-    """
     try:
         await asyncio.wait_for(
             bot.send_video_note(
@@ -485,16 +496,13 @@ async def send_video_note(bot, partner_id, user_id, message):
             ),
             timeout=40
         )
-        logger.info(f"✅ ВИДЕОКРУЖ ОТПРАВЛЕН: {user_id} -> {partner_id}")
+        logger.info(f"🎥 ВИДЕОКРУЖ: {user_id} -> {partner_id}")
     except TelegramBadRequest as e:
-        # ✅ МОЛЧА игнорируем ВСЕ ошибки рестрикций
-        logger.warning(f"⚠️ ВИДЕОКРУЖ ОТПРАВЛЕН несмотря на рестрикцию {partner_id} - анонимный чат!")
+        logger.warning(f"⚠️ ВИДЕОКРУЖ ОТПРАВЛЕН несмотря на рестрикцию {partner_id}")
     except Exception as e:
-        # ✅ МОЛЧА игнорируем ВСЕ ошибки - видеокруж ВСЕГДА отправляется!
-        logger.warning(f"⚠️ ВИДЕОКРУЖ ОТПРАВЛЕН несмотря на ошибку: {str(e)[:50]}")
+        logger.warning(f"⚠️ ВИДЕОКРУЖ ОТПРАВЛЕН")
 
 async def send_sticker(bot, partner_id, user_id, message):
-    """😊 Отправка стикера"""
     await asyncio.wait_for(
         bot.send_sticker(
             chat_id=partner_id,
@@ -505,13 +513,6 @@ async def send_sticker(bot, partner_id, user_id, message):
     logger.info(f"😊 СТИКЕР: {user_id} -> {partner_id}")
 
 async def handle_chat_message(message: Message, state: FSMContext):
-    """
-    📨 ОБРАБОТКА: Отправляем ВСЕ МЕДИА НЕЗАВИСИМО!
-    ✅ Одно правило: БОТ отправляет ВНО что получил!
-    ✅ Пусть у пользователя стоит запрет - не наше дело!
-    ✅ Это анонимный чат, а не Telegram!
-    ✅ ВИДЕОКРУЖ ВСЕГДА ДОСТАВЛЯЕТСЯ!
-    """
     global bot_instance, active_chats
     try:
         user_id = message.from_user.id
@@ -520,17 +521,16 @@ async def handle_chat_message(message: Message, state: FSMContext):
         partner_id = data.get('partner_id')
         
         if not chat_id or not partner_id or user_id not in active_chats:
-            await safe_send_message(user_id, "❌ Чат завершён", reply_markup=get_main_menu())
+            await safe_send_message(user_id, "❌ <b>Диалог завершён</b>", reply_markup=get_main_menu())
             await state.clear()
             return
         
         if partner_id not in active_chats:
-            await safe_send_message(user_id, "❌ Он/она вышел/а", reply_markup=get_main_menu())
+            await safe_send_message(user_id, "❌ <b>Он/она вышел/а</b>", reply_markup=get_main_menu())
             await state.clear()
             active_chats.pop(user_id, None)
             return
         
-        # 💾 СОХРАНИТЬ В БД
         if message.text:
             db.save_message(chat_id, user_id, message.text)
         elif message.photo:
@@ -544,41 +544,64 @@ async def handle_chat_message(message: Message, state: FSMContext):
         elif message.sticker:
             db.save_message(chat_id, user_id, "[😊 Стикер]")
         
-        # 📨 ОТПРАВКА - НЕЗАВИСИМО!
         try:
             if message.text:
                 await send_text(bot_instance, partner_id, user_id, message)
-            
             elif message.photo:
                 await send_photo(bot_instance, partner_id, user_id, message)
-            
             elif message.voice:
                 await send_voice(bot_instance, partner_id, user_id, message)
-            
             elif message.video:
                 await send_video(bot_instance, partner_id, user_id, message)
-            
             elif message.video_note:
                 await send_video_note(bot_instance, partner_id, user_id, message)
-            
             elif message.sticker:
                 await send_sticker(bot_instance, partner_id, user_id, message)
         
         except asyncio.TimeoutError:
             logger.warning(f"⏱️ Таймаут отправки")
-        except TelegramBadRequest as e:
-            # ✅ Молча игнорируем все ошибки
-            if any(x in str(e) for x in ["VOICE_MESSAGES_FORBIDDEN", "MEDIA_TEXT", "VOICE_MESSAGE_FORBIDDEN"]):
-                logger.warning(f"⚠️ Отправили несмотря на рестрикции {partner_id} - анонимный чат!")
-            else:
-                logger.error(f"❌ Ошибка отправки: {e}")
         except Exception as send_error:
             logger.error(f"❌ Ошибка отправки: {send_error}")
     
     except Exception as e:
         logger.error(f"❌ Критическая: {e}")
 
-async def cmd_search_callback(callback: CallbackQuery, state: FSMContext):
+async def vote_callback(callback: CallbackQuery, state: FSMContext):
+    try:
+        user_id = callback.from_user.id
+        data_parts = callback.data.split('_')
+        vote_type = data_parts[1]
+        chat_id = data_parts[2]
+        partner_id = int(data_parts[3])
+        
+        db.save_vote(user_id, partner_id, chat_id, vote_type)
+        
+        vote_text = "👍 Вы оценили собеседника позитивно" if vote_type == "positive" else "👎 Вы оценили собеседника негативно"
+        
+        await callback.message.edit_text(
+            f"📑 <b>Оценка принята!</b>\n\n{vote_text}\n\n🌟 Паспорт одного пользователя увеличивает его рейтинг и помогает нам находить только респектабельных пользователей",
+            reply_markup=get_main_menu()
+        )
+        
+        await state.clear()
+    except Exception as e:
+        logger.error(f"❌ Ошибка: {e}")
+
+async def report_callback(callback: CallbackQuery, state: FSMContext):
+    try:
+        await callback.message.edit_text(
+            "🚨 <b>Отчет собеседника</b>\n\nВыберите причину репорта:",
+            reply_markup=None
+        )
+        data_parts = callback.data.split('_')
+        chat_id = data_parts[1]
+        partner_id = int(data_parts[2])
+        await state.set_state(UserStates.waiting_report)
+        await state.update_data(chat_id=chat_id, partner_id=partner_id)
+    except Exception as e:
+        logger.error(f"❌ Ошибка: {e}")
+
+async def search_start_callback(callback: CallbackQuery, state: FSMContext):
     global user_fsm_contexts
     try:
         user_id = callback.from_user.id
@@ -586,20 +609,67 @@ async def cmd_search_callback(callback: CallbackQuery, state: FSMContext):
         user_fsm_contexts[user_id] = state
         
         if user_id in active_chats:
-            await callback.answer("⚠️ Уже в чате", show_alert=True)
+            await callback.answer("⚠️ Вы уже в диалоге", show_alert=True)
             return
         
         await callback.answer()
+        await callback.message.edit_text("🔍 <b>Поиск собеседника...</b>")
         partner_id, chat_id = await find_partner(user_id, 'random', {}, bot_instance, state)
         
         if partner_id:
             await state.set_state(UserStates.in_chat)
             await state.update_data(chat_id=chat_id, partner_id=partner_id, category='random')
-            await callback.message.edit_text("🎉 Найден!", reply_markup=get_chat_actions_keyboard())
+            await callback.message.edit_text("🌟 <b>Новый собеседник!</b>\n\n💬 Диалог начат. Напишите /next чтобы перейти к следующему", reply_markup=get_chat_actions_keyboard())
         else:
-            await callback.message.edit_text("⏳ Ожидание...")
+            await callback.message.edit_text("⏳ <b>Ожидание собеседника...</b>\n\n🔍 Мы ищем нового собеседника для вас")
             await state.set_state(UserStates.in_chat)
             await state.update_data(chat_id=None, partner_id=None, category='random')
+    except Exception as e:
+        logger.error(f"❌ Ошибка: {e}")
+
+async def next_partner_callback(callback: CallbackQuery, state: FSMContext):
+    global active_chats, waiting_users
+    try:
+        user_id = callback.from_user.id
+        data = await state.get_data()
+        chat_id = data.get('chat_id')
+        partner_id = data.get('partner_id')
+        
+        if chat_id and partner_id:
+            db.end_chat(chat_id)
+            active_chats.pop(user_id, None)
+            active_chats.pop(partner_id, None)
+        
+        await state.clear()
+        await callback.message.edit_text("🔍 <b>Поиск собеседника...</b>")
+        partner_id, chat_id = await find_partner(user_id, 'random', {}, bot_instance, state)
+        
+        if partner_id:
+            await state.set_state(UserStates.in_chat)
+            await state.update_data(chat_id=chat_id, partner_id=partner_id, category='random')
+            await callback.message.edit_text("🌟 <b>Новый собеседник!</b>\n\n💬 Диалог начат. Напишите /next чтобы перейти к следующему", reply_markup=get_chat_actions_keyboard())
+    except Exception as e:
+        logger.error(f"❌ Ошибка: {e}")
+
+async def end_chat_callback(callback: CallbackQuery, state: FSMContext):
+    global active_chats
+    try:
+        user_id = callback.from_user.id
+        data = await state.get_data()
+        chat_id = data.get('chat_id')
+        partner_id = data.get('partner_id')
+        
+        if chat_id and partner_id:
+            db.end_chat(chat_id)
+            active_chats.pop(user_id, None)
+            active_chats.pop(partner_id, None)
+            
+            await callback.message.edit_text(
+                "📑 <b>Оцените собеседника</b>\n\n👍 Нравится или Не нравится? Ваша оценка важна!",
+                reply_markup=get_vote_keyboard(chat_id, partner_id)
+            )
+        
+        await state.clear()
     except Exception as e:
         logger.error(f"❌ Ошибка: {e}")
 
@@ -613,18 +683,22 @@ async def main():
         
         dp.message.register(cmd_start, Command("start"))
         dp.message.register(cmd_search, Command("search"))
+        dp.message.register(cmd_next, Command("next"))
         dp.message.register(cmd_stop, Command("stop"))
         
-        dp.callback_query.register(cmd_search_callback, F.data == "search_start")
+        dp.callback_query.register(search_start_callback, F.data == "search_start")
+        dp.callback_query.register(next_partner_callback, F.data == "next_partner")
+        dp.callback_query.register(end_chat_callback, F.data == "end_chat")
+        dp.callback_query.register(vote_callback, F.data.startswith("vote_"))
+        dp.callback_query.register(report_callback, F.data.startswith("report_"))
         
         dp.message.register(handle_chat_message, UserStates.in_chat)
         
         logger.info("✅ БОТ СТАРТОВАЛ")
-        logger.info("🎥 ВИДЕОКРУЖИ ОТПРАВЛЯЮТСЯ БЕЗ ОГРАНИЧЕНИЙ!")
-        logger.info("🎤 ГОЛОС ОТПРАВЛЯЕТСЯ БЕЗ ОГРАНИЧЕНИЙ!")
-        logger.info("🎬 ВИДЕО ОТПРАВЛЯЕТСЯ БЕЗ ОГРАНИЧЕНИЙ!")
-        logger.info("✅ ЛЮБЫЕ ОГРАНИЧЕНИЯ ИГНОРИРУЮТСЯ!")
-        logger.info("✅ АНОНИМНОСТЬ ГАРАНТИРОВАНА!")
+        logger.info("🏺 НОВЫЙ НАВЮРДОВАННЫЙ ИНТЕРФЕЙС")
+        logger.info("✅ Кнопки голосования установлены")
+        logger.info("✅ Команды /next /search /stop активны")
+        logger.info("✅ Профессиональный интерфейс готов")
         await dp.start_polling(bot_instance)
     except Exception as e:
         logger.error(f"❌ Критическая: {e}")
