@@ -17,7 +17,7 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKe
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.filters.command import Command
-from aiogram.exceptions import TelegramNetworkError, TelegramAPIError
+from aiogram.exceptions import TelegramNetworkError, TelegramAPIError, TelegramBadRequest
 
 from bot.config import BOT_TOKEN, DB_PATH
 
@@ -765,10 +765,10 @@ async def cmd_help(message: Message, state: FSMContext):
             "  Отправит ваш профиль в чат (если вы в нем)\n\n"
             "<b>Функции:</b>\n"
             "📢 <b>Отправка медиа</b>\n"
-            "  - 📷 Фотографии\n"
-            "  - 🎤 Голосовые сообщения\n"
-            "  - 😊 Стикеры\n"
-            "  - 🎞 Видеокружоки (<b>НОВО</b>!)\n\n"
+            "  - 📷 Фотографиями\n"
+            "  - 🎤 Голосовыми сообщениями\n"
+            "  - 😊 Стикерами\n"
+            "  - 🎬 Видеокружоками\n\n"
             "⭐ <b>Система рейтинга</b>\n"
             "  После чата можно оценить собеседника (👍 или 👎)\n\n"
             "<b>Правила:</b>\n"
@@ -781,7 +781,7 @@ async def cmd_help(message: Message, state: FSMContext):
     except Exception as e:
         logger.error(f"❌ Ошибка в cmd_help: {e}")
 
-# ОБНОВЛЕННЫЕ ОБРАБОТЧИКИ ДЛЯ ПОДДЕРКИ Round Video И ГОЛОСОВЫХ СООБЩЕНИЙ
+# ОБНОВЛЕННЫЕ ОБРАБОТЧИКИ ДЛЯ ПОДДЕРЖКИ Round Video И ГОЛОСОВЫХ СООБЩЕНИЙ
 
 async def handle_chat_message(message: Message, state: FSMContext):
     """Обработать сообщение в чате (текст, фото, голос, стикер, видеокружок)"""
@@ -823,7 +823,7 @@ async def handle_chat_message(message: Message, state: FSMContext):
         elif message.sticker:
             db.save_message(chat_id, user_id, "[😊 Стикер]")
         elif message.video_note:
-            db.save_message(chat_id, user_id, "[🎞 Видеокружок]")
+            db.save_message(chat_id, user_id, "[🎬 Видеокружок]")
         
         try:
             # Отправить сообщение партнёру РОВНО (новым сообщением)
@@ -838,24 +838,45 @@ async def handle_chat_message(message: Message, state: FSMContext):
                 # Фотография
                 await asyncio.wait_for(
                     bot_instance.send_photo(partner_id, message.photo[-1].file_id, caption=message.caption or "📷"),
-                    timeout=30  # Увеличен timeout для фото
+                    timeout=30
                 )
                 logger.info(f"✅ Фото от {user_id} отправлено {partner_id}")
             elif message.voice:
-                # Голосовое сообщение - ИСПРАВЛЕННАЯ ОБРАБОТКА
+                # Голосовое сообщение - ИСПРАВЛЕНО
                 logger.info(f"🎤 Обработка голоса от {user_id}...")
                 logger.debug(f"   File ID: {message.voice.file_id}")
                 logger.debug(f"   Duration: {message.voice.duration}s")
                 
-                await asyncio.wait_for(
-                    bot_instance.send_voice(
-                        partner_id,
-                        message.voice.file_id,
-                        duration=message.voice.duration  # Сохраняем оригинальную длительность
-                    ),
-                    timeout=40  # Увеличен timeout для голоса (до 40 сек для больших файлов)
-                )
-                logger.info(f"✅ Голос от {user_id} успешно отправлен {partner_id}")
+                try:
+                    await asyncio.wait_for(
+                        bot_instance.send_voice(
+                            partner_id,
+                            message.voice.file_id,
+                            duration=message.voice.duration
+                        ),
+                        timeout=40
+                    )
+                    logger.info(f"✅ Голос от {user_id} успешно отправлен {partner_id}")
+                except TelegramBadRequest as tg_err:
+                    # Если сервер Telegram запретил отправку, пробуем FORWARDED
+                    if "VOICE_MESSAGES_FORBIDDEN" in str(tg_err):
+                        logger.warning(f"⚠️ VOICE_MESSAGES_FORBIDDEN: Пытаемся переслать сообщение")
+                        try:
+                            # Перешлём оригинальное сообщение
+                            await asyncio.wait_for(
+                                bot_instance.forward_message(
+                                    partner_id,
+                                    message.from_user.id,
+                                    message.message_id
+                                ),
+                                timeout=20
+                            )
+                            logger.info(f"✅ Голос переслан (forward) от {user_id} к {partner_id}")
+                        except Exception as forward_err:
+                            logger.error(f"❌ Ошибка пересылки: {forward_err}")
+                            await safe_send_message(user_id, "❌ Не удалось отправить голос (ограничение Telegram)")
+                    else:
+                        raise
             elif message.sticker:
                 # Стикер
                 await asyncio.wait_for(
@@ -864,15 +885,15 @@ async def handle_chat_message(message: Message, state: FSMContext):
                 )
                 logger.info(f"✅ Стикер от {user_id} отправлен {partner_id}")
             elif message.video_note:
-                # Видеокружок (НОВО!)
+                # Видеокружок
                 await asyncio.wait_for(
                     bot_instance.send_video_note(partner_id, message.video_note.file_id),
-                    timeout=40  # Увеличен timeout для видео
+                    timeout=40
                 )
                 logger.info(f"✅ Видеокружок от {user_id} отправлен {partner_id}")
         except asyncio.TimeoutError:
             logger.warning(f"⏱️ Таймаут при отправке медиа от {user_id} партнёру {partner_id}")
-            await safe_send_message(user_id, "⏱️ Проблема с отправкой (таймаут). Файл слишком большой или слабое соединение. Попробуйте еще раз.")
+            await safe_send_message(user_id, "⏱️ Проблема с отправкой (таймаут). Файл слишком большой или слабое соединение. Попробуйте ещё раз.")
         except Exception as send_error:
             logger.error(f"❌ Ошибка отправки медиа от {user_id} партнёру {partner_id}: {send_error}", exc_info=True)
             await safe_send_message(user_id, "❌ Ошибка отправки сообщения. Возможно, собеседник вышел из чата или файл повреждён.")
@@ -970,8 +991,7 @@ async def main():
         dp.callback_query.register(cmd_search_callback, F.data == "search_start")
         
         # ОБНОВЛЕННАЯ регистрация обработчиков медиа для in_chat состояния
-        # Порядок ВАЖЕН: более специфичные фильтры должны быть ДО более общих!
-        # Сначала регистрируем медиа (voice, photo, sticker, video_note), потом текст
+        # Порядок ВАЖЕН: более специфичные фильтры до более общих!
         dp.message.register(handle_chat_message, UserStates.in_chat, F.voice)
         dp.message.register(handle_chat_message, UserStates.in_chat, F.photo)
         dp.message.register(handle_chat_message, UserStates.in_chat, F.sticker)
@@ -980,7 +1000,7 @@ async def main():
         
         logger.info("✅ Бот запущен и готов к работе!")
         logger.info("🎤 Поддержка голосовых сообщений активирована!")
-        logger.info("🎞 Поддержка video_note (видеокружок) активирована!")
+        logger.info("🎬 Поддержка video_note (видеокружок) активирована!")
         
         # Запустить бота
         await dp.start_polling(bot_instance)
