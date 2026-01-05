@@ -19,7 +19,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.filters.command import Command
 from aiogram.exceptions import TelegramNetworkError, TelegramAPIError
 
-from config import BOT_TOKEN, DB_PATH
+from bot.config import BOT_TOKEN, DB_PATH
 
 # Configure logging
 logging.basicConfig(
