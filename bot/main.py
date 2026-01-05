@@ -297,7 +297,7 @@ async def find_partner(user_id: int, category: str, search_filters: dict, bot: B
             try:
                 await bot.send_message(
                     partner_id,
-                    "🌟 <b>Новый собеседник найден!</b>\n\n🌏 Диалог начат. Посылай /next чтобы ти повторно фильтровали собеседника, /stop чтобы закончить диалог",
+                    "🌟 <b>Новый собеседник найден!</b>\n\n🌏 Диалог начат. Напишите /next чтобы перейти к следующему собеседнику",
                     reply_markup=get_chat_actions_keyboard()
                 )
             except:
@@ -407,6 +407,15 @@ async def cmd_next(message: Message, state: FSMContext):
             db.end_chat(chat_id)
             active_chats.pop(user_id, None)
             active_chats.pop(partner_id, None)
+            
+            # 📣 Оуведомляю обоих пользователей
+            await safe_send_message(
+                partner_id,
+                "📣 <b>ДИАЛОГ ЗАВЕРШЁН</b>\n\n👍 Оцените собеседника:\n\n👍 Нравится - Не нравится\n🚨 Оставить отчёт - Новый диалог",
+                reply_markup=get_vote_keyboard(chat_id, user_id)
+            )
+            
+            logger.info(f"📣 Оба пользователя оуведомлены о завершении")
         
         await state.clear()
         await cmd_search(message, state)
@@ -426,12 +435,23 @@ async def cmd_stop(message: Message, state: FSMContext):
             active_chats.pop(user_id, None)
             active_chats.pop(partner_id, None)
             
-            # Показываем голосование
+            # 📣 Оуведомляю обоих пользователей
+            
+            # Текущему пользователю
             await safe_send_message(
                 user_id,
                 "📑 <b>Оцените собеседника</b>\n\n👍 Нравится или Не нравится? Ваша оценка важна!",
                 reply_markup=get_vote_keyboard(chat_id, partner_id)
             )
+            
+            # Партнёру
+            await safe_send_message(
+                partner_id,
+                "📣 <b>ДИАЛОГ ЗАВЕРШЁН</b>\n\n👍 Оцените собеседника:\n\n👍 Нравится - Не нравится\n🚨 Оставить отчёт - Новый диалог",
+                reply_markup=get_vote_keyboard(chat_id, user_id)
+            )
+            
+            logger.info(f"📣 Оба пользователя оуведомлены о завершении")
         
         await state.clear()
     except Exception as e:
@@ -639,6 +659,13 @@ async def next_partner_callback(callback: CallbackQuery, state: FSMContext):
             db.end_chat(chat_id)
             active_chats.pop(user_id, None)
             active_chats.pop(partner_id, None)
+            
+            # 📣 Оуведомляю партнёра
+            await safe_send_message(
+                partner_id,
+                "📣 <b>ДИАЛОГ ЗАВЕРШЁН</b>\n\n👍 Оцените собеседника:\n\n👍 Нравится - Не нравится\n🚨 Оставить отчёт - Новый диалог",
+                reply_markup=get_vote_keyboard(chat_id, user_id)
+            )
         
         await state.clear()
         await callback.message.edit_text("🔍 <b>Поиск собеседника...</b>")
@@ -664,10 +691,22 @@ async def end_chat_callback(callback: CallbackQuery, state: FSMContext):
             active_chats.pop(user_id, None)
             active_chats.pop(partner_id, None)
             
+            # 📣 Оуведомляю обоих пользователей
+            
+            # Текущему пользователю
             await callback.message.edit_text(
                 "📑 <b>Оцените собеседника</b>\n\n👍 Нравится или Не нравится? Ваша оценка важна!",
                 reply_markup=get_vote_keyboard(chat_id, partner_id)
             )
+            
+            # Партнёру
+            await safe_send_message(
+                partner_id,
+                "📣 <b>ДИАЛОГ ЗАВЕРШЁН</b>\n\n👍 Оцените собеседника:\n\n👍 Нравится - Не нравится\n🚨 Оставить отчёт - Новый диалог",
+                reply_markup=get_vote_keyboard(chat_id, user_id)
+            )
+            
+            logger.info(f"📣 Оба пользователя отобразили голосование")
         
         await state.clear()
     except Exception as e:
@@ -694,11 +733,11 @@ async def main():
         
         dp.message.register(handle_chat_message, UserStates.in_chat)
         
-        logger.info("✅ БОТ СТАРТОВАЛ")
-        logger.info("🏺 НОВЫЙ НАВЮРДОВАННЫЙ ИНТЕРФЕЙС")
-        logger.info("✅ Кнопки голосования установлены")
-        logger.info("✅ Команды /next /search /stop активны")
-        logger.info("✅ Профессиональный интерфейс готов")
+        logger.info("✅ БОТ СТАРтОВАЛ")
+        logger.info("📣 ДВУСТОРОННИЕ ОПОВЕЩЕНИЯ ОБ ОКОНЧАНИИ")
+        logger.info("👍 ОБА ПОЛЬЗОВАТЕЛЯ ВИДЯТ УНГОВЕРЕНИЕ")
+        logger.info("✅ ОБА МОГУТ ОЦЕНИТь ДРУГ ДРУГА")
+        logger.info("🌟 ДИАЛОГ КОМЭЯТОМУ КОМЭЮ")
         await dp.start_polling(bot_instance)
     except Exception as e:
         logger.error(f"❌ Критическая: {e}")
