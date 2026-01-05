@@ -527,7 +527,8 @@ async def cmd_start(message: Message, state: FSMContext):
             "<b>📸 В диалоге можно делиться:</b>\n"
             "📷 Фотографиями\n"
             "🎞 Голосовыми сообщениями\n"
-            "👽 Стикерами\n\n"
+            "👽 Стикерами\n"
+            "🎞 Видеокружоками (НОВО!)\n\n"
             "<b>Выберите действие:</b>",
             reply_markup=get_main_menu()
         )
@@ -766,7 +767,8 @@ async def cmd_help(message: Message, state: FSMContext):
             "📢 <b>Отправка медиа</b>\n"
             "  - 📷 Фотографии\n"
             "  - 🎤 Голосовые сообщения\n"
-            "  - 😊 Стикеры\n\n"
+            "  - 😊 Стикеры\n"
+            "  - 🎞 Видеокружоки (<b>НОВО</b>!)\n\n"
             "⭐ <b>Система рейтинга</b>\n"
             "  После чата можно оценить собеседника (👍 или 👎)\n\n"
             "<b>Правила:</b>\n"
@@ -779,10 +781,10 @@ async def cmd_help(message: Message, state: FSMContext):
     except Exception as e:
         logger.error(f"❌ Ошибка в cmd_help: {e}")
 
-# ИСПРАВЛЕННЫЕ ОБРАБОТЧИКИ ДЛЯ ПОДДЕРЖКИ МЕДИА
+# ОБНОВЛЕННЫЕ ОБРАБОТЧИКИ ДЛЯ ПОДДЕРКИ Round Video
 
 async def handle_chat_message(message: Message, state: FSMContext):
-    """Обработать сообщение в чате (текст, фото, голос, стикер)"""
+    """Обработать сообщение в чате (текст, фото, голос, стикер, видеокружок)"""
     global bot_instance, active_chats, user_fsm_contexts
     try:
         user_id = message.from_user.id
@@ -820,6 +822,8 @@ async def handle_chat_message(message: Message, state: FSMContext):
             db.save_message(chat_id, user_id, "[🎤 Голос]")
         elif message.sticker:
             db.save_message(chat_id, user_id, "[😊 Стикер]")
+        elif message.video_note:
+            db.save_message(chat_id, user_id, "[🎞 Видеокружок]")
         
         try:
             # Отправить сообщение партнёру РОВНО (новым сообщением)
@@ -851,6 +855,13 @@ async def handle_chat_message(message: Message, state: FSMContext):
                     timeout=20
                 )
                 logger.info(f"✅ Стикер от {user_id} отправлен {partner_id}")
+            elif message.video_note:
+                # Видеокружок (НОВО!)
+                await asyncio.wait_for(
+                    bot_instance.send_video_note(partner_id, message.video_note.file_id),
+                    timeout=20
+                )
+                logger.info(f"✅ Видеокружок от {user_id} отправлен {partner_id}")
         except asyncio.TimeoutError:
             logger.warning(f"⏱️ Таймаут при отправке сообщения партнёру {partner_id}")
             await safe_send_message(user_id, "⏱️ Проблема с отправкой (таймаут). Попробуйте еще раз.")
@@ -950,15 +961,17 @@ async def main():
         # Регистрация callback кнопок
         dp.callback_query.register(cmd_search_callback, F.data == "search_start")
         
-        # ИСПРАВЛЕННАЯ регистрация обработчиков медиа для in_chat состояния
+        # ОБНОВЛЕННАЯ регистрация обработчиков медиа для in_chat состояния
         # Порядок ВАЖЕН: более специфичные фильтры должны быть ДО более общих!
-        # Сначала регистрируем медиа (voice, photo, sticker), потом текст
+        # Сначала регистрируем медиа (voice, photo, sticker, video_note), потом текст
         dp.message.register(handle_chat_message, UserStates.in_chat, F.voice)
         dp.message.register(handle_chat_message, UserStates.in_chat, F.photo)
         dp.message.register(handle_chat_message, UserStates.in_chat, F.sticker)
+        dp.message.register(handle_chat_message, UserStates.in_chat, F.video_note)  # НОВО!
         dp.message.register(handle_chat_message, UserStates.in_chat)  # Текстовые сообщения
         
         logger.info("✅ Бот запущен и готов к работе!")
+        logger.info("🎞 Поддержка video_note (видеокружок) активирована!")
         
         # Запустить бота
         await dp.start_polling(bot_instance)
