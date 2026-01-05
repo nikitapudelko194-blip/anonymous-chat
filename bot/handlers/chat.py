@@ -65,21 +65,6 @@ async def select_category(
     
     user = await db.get_user(callback.from_user.id)
     
-    # Проверка премиум для гендерного фильтра
-    if category == 'gender' and not user['is_premium']:
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💎 Купить premium", callback_data="buy_premium")],
-            [InlineKeyboardButton(text="⬅️ Назад", callback_data="main_menu")],
-        ])
-        
-        await callback.message.edit_text(
-            "💎 <b>Premium функция</b>\n\n"
-            "Фильтр по полу доступен только для:\n"
-            "✨ Premium подписчиков",
-            reply_markup=kb
-        )
-        return
-    
     await callback.answer()
     await callback.message.edit_text(
         "⏳ <b>Поиск собеседника...</b>\n\n"
