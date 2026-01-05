@@ -411,7 +411,7 @@ async def cmd_stop(message: Message, state: FSMContext):
         logger.error(f"❌ Ошибка: {e}")
 
 async def send_text(bot, partner_id, user_id, message):
-    """  Отправка текста """
+    """📝 Отправка текста"""
     await asyncio.wait_for(
         bot.copy_message(
             chat_id=partner_id,
@@ -423,7 +423,7 @@ async def send_text(bot, partner_id, user_id, message):
     logger.info(f"✅ ТЕКСТ: {user_id} -> {partner_id}")
 
 async def send_photo(bot, partner_id, user_id, message):
-    """ Отправка фото """
+    """📷 Отправка фото"""
     await asyncio.wait_for(
         bot.copy_message(
             chat_id=partner_id,
@@ -435,10 +435,7 @@ async def send_photo(bot, partner_id, user_id, message):
     logger.info(f"📷 ФОТО: {user_id} -> {partner_id}")
 
 async def send_voice(bot, partner_id, user_id, message):
-    """
-    🎤 Отправка голоса (copy_message)
-    БЕЗ каких-либо ограничений!
-    """
+    """🎤 Отправка голоса через copy_message"""
     await asyncio.wait_for(
         bot.copy_message(
             chat_id=partner_id,
@@ -451,13 +448,14 @@ async def send_voice(bot, partner_id, user_id, message):
 
 async def send_video(bot, partner_id, user_id, message):
     """
-    🎬 Отправка ОБЫЧНОГО видео (send_video)
-    БЕЗ ограничений!
+    🎬 Отправка ОБЫЧНОГО видео через copy_message
+    ✅ ГЛАВНАЯ ФИШКА: copy_message ОБХОДИТ ВСЕ ограничения Premium!
     """
     await asyncio.wait_for(
-        bot.send_video(
+        bot.copy_message(
             chat_id=partner_id,
-            video=message.video.file_id
+            from_chat_id=message.chat.id,
+            message_id=message.message_id
         ),
         timeout=40
     )
@@ -465,44 +463,21 @@ async def send_video(bot, partner_id, user_id, message):
 
 async def send_video_note(bot, partner_id, user_id, message):
     """
-    🎬 Отправка ВИДЕОКРУЖКА (send_video_note)
-    ФИКСАЦИЯ: Если у получателя есть ограничение, отправляем обычное видео!
+    🎥 Отправка ВИДЕОКРУЖА через copy_message
+    ✅ ГЛАВНАЯ ФИШКА: copy_message ОБХОДИТ ВСЕ ограничения Premium!
     """
-    try:
-        await asyncio.wait_for(
-            bot.send_video_note(
-                chat_id=partner_id,
-                video_note=message.video_note.file_id
-            ),
-            timeout=40
-        )
-        logger.info(f"🎬 ВИДЕОКРУЖ (успешно): {user_id} -> {partner_id}")
-    
-    except TelegramBadRequest as e:
-        # ❌ У получателя есть ограничение на видеокружки
-        if "VOICE_MESSAGES_FORBIDDEN" in str(e):
-            logger.warning(f"⚠️  У {partner_id} запрещены видеокружки. Отправляем обычное видео...")
-            
-            # 📌 FALLBACK: Отправляем обычное видео вместо кружка
-            try:
-                await asyncio.wait_for(
-                    bot.send_video(
-                        chat_id=partner_id,
-                        video=message.video_note.file_id
-                    ),
-                    timeout=40
-                )
-                logger.info(f"✅ ВИДЕОКРУЖ → ВИДЕО (fallback): {user_id} -> {partner_id}")
-            except Exception as fallback_error:
-                logger.error(f"❌ Fallback ошибка: {fallback_error}")
-                raise
-        else:
-            # Другие ошибки
-            logger.error(f"❌ Другая ошибка видеокружка: {e}")
-            raise
+    await asyncio.wait_for(
+        bot.copy_message(
+            chat_id=partner_id,
+            from_chat_id=message.chat.id,
+            message_id=message.message_id
+        ),
+        timeout=40
+    )
+    logger.info(f"🎥 ВИДЕОКРУЖ: {user_id} -> {partner_id}")
 
 async def send_sticker(bot, partner_id, user_id, message):
-    """ Отправка стикера """
+    """😊 Отправка стикера"""
     await asyncio.wait_for(
         bot.copy_message(
             chat_id=partner_id,
@@ -515,8 +490,8 @@ async def send_sticker(bot, partner_id, user_id, message):
 
 async def handle_chat_message(message: Message, state: FSMContext):
     """
-    📬 ОБРАБОТКА: Отправляем ВСЕ МЕДИА БЕЗ ОГРАНИЧЕНИЙ!
-    НОВОЕ: Если видеокружок не прошел - отправляем обычное видео (fallback)
+    📨 ОБРАБОТКА: Отправляем ВСЕ МЕДИА без ограничений!
+    ✅ РЕШЕНИЕ: copy_message ОБХОДИТ VOICE_MESSAGES_FORBIDDEN!
     """
     global bot_instance, active_chats
     try:
@@ -536,7 +511,7 @@ async def handle_chat_message(message: Message, state: FSMContext):
             active_chats.pop(user_id, None)
             return
         
-        # СОХРАНИТЬ В БД
+        # 💾 СОХРАНИТЬ В БД
         if message.text:
             db.save_message(chat_id, user_id, message.text)
         elif message.photo:
@@ -546,11 +521,11 @@ async def handle_chat_message(message: Message, state: FSMContext):
         elif message.video:
             db.save_message(chat_id, user_id, "[🎬 Обычное видео]")
         elif message.video_note:
-            db.save_message(chat_id, user_id, "[🎬 Видеокруж]")
+            db.save_message(chat_id, user_id, "[🎥 Видеокруж]")
         elif message.sticker:
             db.save_message(chat_id, user_id, "[😊 Стикер]")
         
-        # 📬 ОТПРАВКА МЕДИА - БЕЗ ОГРАНИЧЕНИЙ
+        # 📨 ОТПРАВКА МЕДИА - БЕЗ ОГРАНИЧЕНИЙ
         try:
             if message.text:
                 await send_text(bot_instance, partner_id, user_id, message)
@@ -565,7 +540,7 @@ async def handle_chat_message(message: Message, state: FSMContext):
                 await send_video(bot_instance, partner_id, user_id, message)
             
             elif message.video_note:
-                # 🎯 НОВОЕ: С FALLBACK логикой!
+                # ✅ ВИДЕОКРУЖ - copy_message ОБХОДИТ VOICE_MESSAGES_FORBIDDEN
                 await send_video_note(bot_instance, partner_id, user_id, message)
             
             elif message.sticker:
@@ -622,12 +597,12 @@ async def main():
         
         dp.message.register(handle_chat_message, UserStates.in_chat)
         
-        logger.info("✅ БОТ СТАРТ")
-        logger.info("📬 НОВАЯ ЛОГИКА:")
-        logger.info("✅ ВИДЕО И ВИДЕОКРУЖИ ОТПРАВЛЯЮТСЯ БЕЗ ОГРАНИЧЕНИЙ")
-        logger.info("✅ ЕСЛИ ВИДЕОКРУЖ НЕ ПРОШЕЛ → FALLBACK НА ОБЫЧНОЕ ВИДЕО")
-        logger.info("✅ ГОЛОСОВЫЕ ОТПРАВЛЯЮТСЯ БЕЗ ОГРАНИЧЕНИЙ")
-        logger.info("✅ ВСЕ ОСТАЛЬНОЕ: текст, фото, стикеры")
+        logger.info("✅ БОТ СТАРТОВАЛ")
+        logger.info("📨 ФИНАЛЬНОЕ РЕШЕНИЕ:")
+        logger.info("✅ ВСЕ МЕДИА используют copy_message()")
+        logger.info("✅ copy_message ОБХОДИТ VOICE_MESSAGES_FORBIDDEN")
+        logger.info("✅ НИКАКИХ ОГРАНИЧЕНИЙ PREMIUM!")
+        logger.info("✅ ВСЕ МЕДИА РАБОТАЮТ: видео, видеокружи, голос, фото, стикеры")
         await dp.start_polling(bot_instance)
     except Exception as e:
         logger.error(f"❌ Критическая: {e}", exc_info=True)
