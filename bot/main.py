@@ -36,6 +36,14 @@ active_chats = {}
 user_fsm_contexts = {}
 user_voted = {}
 
+# 🚫 FORBIDDEN CONTENT FILTER
+FORBIDDEN_KEYWORDS = {
+    'csam': ['child sex', 'minor porn', 'cp', 'children porn', 'kid porn', 'underage', 'pedophilia'],
+    'drugs': ['cocaine', 'heroin', 'meth', 'fentanyl', 'mdma', 'lsd', 'mushrooms', 'weed dealer', 'sell drugs'],
+    'violence': ['kill yourself', 'kys', 'commit suicide', 'bomb', 'attack plan', 'shoot up'],
+    'scam': ['money transfer', 'send money', 'western union', 'gift card', 'paypal verify', 'bitcoin transfer'],
+}
+
 class Database:
     def __init__(self):
         self.db_path = DB_PATH
@@ -126,6 +134,16 @@ class Database:
                 )
             ''')
             
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS banned_users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL UNIQUE,
+                    reason TEXT,
+                    banned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    expires_at DATETIME
+                )
+            ''')
+            
             conn.commit()
             conn.close()
             logger.info("✅ БД инициализирована")
@@ -158,6 +176,41 @@ class Database:
             logger.error(f"❌ Ошибка: {e}")
             return None
     
+    def is_user_banned(self, user_id):
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT expires_at FROM banned_users 
+                WHERE user_id = ? AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)
+            ''', (user_id,))
+            result = cursor.fetchone()
+            conn.close()
+            return result is not None
+        except Exception as e:
+            logger.error(f"❌ Ошибка: {e}")
+            return False
+    
+    def ban_user(self, user_id, reason, duration_days=None):
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            expires_at = None
+            if duration_days:
+                expires_at = (datetime.now() + timedelta(days=duration_days)).isoformat()
+            
+            cursor.execute('''
+                INSERT OR REPLACE INTO banned_users (user_id, reason, expires_at)
+                VALUES (?, ?, ?)
+            ''', (user_id, reason, expires_at))
+            
+            conn.commit()
+            conn.close()
+            logger.warning(f"🚫 Пользователь {user_id} баннен: {reason}")
+        except Exception as e:
+            logger.error(f"❌ Ошибка: {e}")
+    
     def update_user(self, user_id, **kwargs):
         try:
             conn = sqlite3.connect(self.db_path)
@@ -169,6 +222,25 @@ class Database:
             conn.close()
         except Exception as e:
             logger.error(f"❌ Ошибка: {e}")
+    
+    def delete_user_data(self, user_id):
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            cursor.execute('DELETE FROM users WHERE user_id = ?', (user_id,))
+            cursor.execute('DELETE FROM messages WHERE sender_id = ?', (user_id,))
+            cursor.execute('DELETE FROM votes WHERE voter_id = ? OR votee_id = ?', (user_id, user_id))
+            cursor.execute('DELETE FROM reports WHERE reporter_id = ? OR reported_user_id = ?', (user_id, user_id))
+            cursor.execute('DELETE FROM chats WHERE user1_id = ? OR user2_id = ?', (user_id, user_id))
+            
+            conn.commit()
+            conn.close()
+            logger.info(f"🗑️ Отчистены все данные пользователя {user_id}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Ошибка: {e}")
+            return False
     
     def create_chat(self, user1_id, user2_id, category):
         try:
@@ -266,6 +338,18 @@ class UserStates(StatesGroup):
 db = Database()
 bot_instance = None
 
+def check_forbidden_content(text: str) -> tuple[bool, str]:
+    """🚫 Проверка на запрещённый контент"""
+    text_lower = text.lower()
+    
+    for category, keywords in FORBIDDEN_KEYWORDS.items():
+        for keyword in keywords:
+            if keyword.lower() in text_lower:
+                logger.warning(f"🚫 Открыт {category}: {keyword}")
+                return True, category
+    
+    return False, ""
+
 async def find_partner(user_id: int, category: str, search_filters: dict, bot: Bot, state: FSMContext):
     global waiting_users, active_chats, user_fsm_contexts
     
@@ -314,7 +398,7 @@ def get_main_menu():
         [InlineKeyboardButton(text="👫 Поиск по полу", callback_data="search_gender")],
         [InlineKeyboardButton(text="📖 Выбрать интересы", callback_data="choose_interests")],
         [InlineKeyboardButton(text="📄 Правила общения", callback_data="rules")],
-        [InlineKeyboardButton(text="❓ Помощь по боту", callback_data="help")],
+        [InlineKeyboardButton(text="❓ Помощь", callback_data="help")],
         [InlineKeyboardButton(text="💳 Премиум", callback_data="premium")],
     ])
 
@@ -330,13 +414,6 @@ def get_vote_keyboard(chat_id, partner_id):
         [InlineKeyboardButton(text="👎 Не нравится", callback_data=f"vote_negative_{chat_id}_{partner_id}")],
         [InlineKeyboardButton(text="🚨 Отчет", callback_data=f"report_{chat_id}_{partner_id}")],
         [InlineKeyboardButton(text="⏭️ Новый диалог", callback_data="search_start")],
-    ])
-
-def get_report_keyboard(chat_id, partner_id):
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📛 Спам и реклама", callback_data=f"report_spam_{chat_id}_{partner_id}")],
-        [InlineKeyboardButton(text="🚫 Непристойная речь", callback_data=f"report_obscene_{chat_id}_{partner_id}")],
-        [InlineKeyboardButton(text="♾️ Остаться без удаления диалога", callback_data="search_start")],
     ])
 
 async def safe_send_message(chat_id, text, reply_markup=None, timeout=30):
@@ -355,6 +432,12 @@ async def cmd_start(message: Message, state: FSMContext):
     global user_fsm_contexts
     try:
         user_id = message.from_user.id
+        
+        # Проверяем бан
+        if db.is_user_banned(user_id):
+            await safe_send_message(user_id, "❌ <b>Вы банны в этом боте</b>\n\nЕсли это ошибка, отправьте /appeal")
+            return
+        
         user = db.get_user(user_id)
         user_fsm_contexts[user_id] = state
         
@@ -370,10 +453,92 @@ async def cmd_start(message: Message, state: FSMContext):
     except Exception as e:
         logger.error(f"❌ Ошибка: {e}")
 
+async def cmd_privacy(message: Message):
+    """📄 Политика конфиденциальности"""
+    privacy_text = """
+📄 <b>ПОЛИТИКА КОНФИДЕНЦИАЛЬНОСТИ</b>
+
+<b>🔍 Какие данные мы собираем:</b>
+• Telegram User ID
+• Основные данные телеграма (first_name, phone, IP)
+• Возраст, пол, интересы (если вы вказали)
+• Сообщения в диалогах
+• Юридическая информация (телефон, IP адрес) при запросе органов власти
+
+<b>💼 Как эти данные используются:</b>
+• Для функции анонимных диалогов
+• Для системы рейтинга
+• Для модерации и безопасности
+• НЕ продаем третьим лицам
+
+<b>🗑️ Удаление данных:</b>
+У вас u0435сть право требовать удаление всех данных по команде /delete_my_data
+
+<b>⚒️ Открытые источники:</b>
+Этот бот юридически ответствен в соответствии с Telegram Terms of Service.
+При законных запросах ни Политика Не деелографицт открытие НИ информации о пользователях.
+
+📞 Контакт: @nikitapudelko194
+"""
+    await safe_send_message(message.from_user.id, privacy_text)
+
+async def cmd_terms(message: Message):
+    """📄 МЕМО С ОУУУ ОСПОЛЬЗОВАНИОМ"""
+    terms_text = """
+📄 <b>ПОВЮЖНЫЕ УСЛОВИЯ УСЮПОЛьЗОВАНИЯ</b>
+
+<b>✅ РАЗРЕШЕНО:</b>
+• Анонимные диалоги с другими пользователями
+• Оценивание собеседников
+• Отправка фото, видео, воисовых сообщений
+• Отправка стикеров
+
+<b>❌ ЗАПРЕЩЕНО ПО ВВОХ НОНЕЧНЫХ ЙДЖЕКтАХ:</b>
+• 🗑️ <b>Детское поюзническое контент</b> (CSAM/детская порнография)
+• 🗈️ Машиностроение наркотиков, продажа наркотиков
+• 👗 Насилие и угрозы
+• 📄 Мошенничество и фишинг
+• 👂 Наружение прав основателя авторских прав регистрации
+• 🚨 Явные угрозы всениям роздиныется истороцоистию
+
+<b>⚠️ ОТВЕТСТВЕННОСТЬ:</b>
+• Пользователи тематически несносят Ответственность за свою анонимность
+• При нарушении работала в боте - форевер бан
+• Telegram отправляет данные начальников властей без согласия
+
+📞 Контакт: @nikitapudelko194
+"""
+    await safe_send_message(message.from_user.id, terms_text)
+
+async def cmd_delete_my_data(message: Message):
+    """🗑️ Отмэтнют все данные пользователя"""
+    user_id = message.from_user.id
+    
+    try:
+        success = db.delete_user_data(user_id)
+        
+        if success:
+            await safe_send_message(
+                user_id,
+                "🗑️ <b>Успех!</b>\n\nВсе ваши данные удалены из базы данных."
+            )
+            logger.info(f"✅ Пользователь {user_id} удалил свои данные")
+        else:
+            await safe_send_message(user_id, "❌ Ошибка при удалении данных")
+    except Exception as e:
+        logger.error(f"❌ Ошибка: {e}")
+        await safe_send_message(user_id, "❌ Ошибка при удалении данных")
+
 async def cmd_search(message: Message, state: FSMContext):
     global user_fsm_contexts
     try:
         user_id = message.from_user.id
+        
+        # Проверяем бан
+        if db.is_user_banned(user_id):
+            await safe_send_message(user_id, "❌ <b>Вы банны в этом боте</b>")
+            return
+        
         user = db.get_user(user_id)
         user_fsm_contexts[user_id] = state
         
@@ -408,7 +573,6 @@ async def cmd_next(message: Message, state: FSMContext):
             active_chats.pop(user_id, None)
             active_chats.pop(partner_id, None)
             
-            # 📣 ОУВЕДОМЛЯЕМ ОБОИХ - ОБА ПОЛУЧАЮТ НОВОЕ СООБЩЕНИЕ
             await safe_send_message(
                 user_id,
                 "📑 <b>Оцените собеседника</b>\n\n👍 Нравится или Не нравится? Ваша оценка важна!",
@@ -420,8 +584,6 @@ async def cmd_next(message: Message, state: FSMContext):
                 "📑 <b>Оцените собеседника</b>\n\n👍 Нравится или Не нравится? Ваша оценка важна!",
                 reply_markup=get_vote_keyboard(chat_id, user_id)
             )
-            
-            logger.info(f"📣 /next: ОБА пользователя отобразили оценку")
         
         await state.clear()
         await cmd_search(message, state)
@@ -441,43 +603,32 @@ async def cmd_stop(message: Message, state: FSMContext):
             active_chats.pop(user_id, None)
             active_chats.pop(partner_id, None)
             
-            # 📣 ОУВЕДОМЛЯЕМ ОБОИХ - ОБА ПОЛУЧАЮТ НОВОЕ сообщение!
-            
             voting_message = "📑 <b>Оцените собеседника</b>\n\n👍 Нравится или Не нравится? Ваша оценка важна!"
             
-            # ПАРТНЕРУ - НОВОЕ сообщение
             await safe_send_message(
                 partner_id,
                 voting_message,
                 reply_markup=get_vote_keyboard(chat_id, user_id)
             )
             
-            # ТЕКУЩЕМУ - НОВОЕ сообщение
             await safe_send_message(
                 user_id,
                 voting_message,
                 reply_markup=get_vote_keyboard(chat_id, partner_id)
             )
-            
-            logger.info(f"📣 /stop: ОБА пользователя отобразили оценку")
         
         await state.clear()
     except Exception as e:
         logger.error(f"❌ Ошибка: {e}")
 
 async def send_text(bot, partner_id, user_id, message):
-    """📝 Отправка текста"""
     await asyncio.wait_for(
-        bot.send_message(
-            chat_id=partner_id,
-            text=message.text
-        ),
+        bot.send_message(chat_id=partner_id, text=message.text),
         timeout=40
     )
     logger.info(f"✅ ТЕКСТ: {user_id} -> {partner_id}")
 
 async def send_photo(bot, partner_id, user_id, message):
-    """📷 Отправка фото"""
     await asyncio.wait_for(
         bot.send_photo(
             chat_id=partner_id,
@@ -491,15 +642,12 @@ async def send_photo(bot, partner_id, user_id, message):
 async def send_voice(bot, partner_id, user_id, message):
     try:
         await asyncio.wait_for(
-            bot.send_voice(
-                chat_id=partner_id,
-                voice=message.voice.file_id
-            ),
+            bot.send_voice(chat_id=partner_id, voice=message.voice.file_id),
             timeout=40
         )
         logger.info(f"🎤 ГОЛОС: {user_id} -> {partner_id}")
     except TelegramBadRequest as e:
-        logger.warning(f"⚠️ ГОЛОС ОТПРАВЛЕН несмотря на рестрикцию {partner_id}")
+        logger.warning(f"⚠️ ГОЛОС ОТПРАВЛЕН ")
 
 async def send_video(bot, partner_id, user_id, message):
     try:
@@ -513,29 +661,23 @@ async def send_video(bot, partner_id, user_id, message):
         )
         logger.info(f"🎬 ВИДЕО: {user_id} -> {partner_id}")
     except TelegramBadRequest as e:
-        logger.warning(f"⚠️ ВИДЕО ОТПРАВЛЕНО несмотря на рестрикцию {partner_id}")
+        logger.warning(f"⚠️ ВИДЕО ОТПРАВЛЕН")
 
 async def send_video_note(bot, partner_id, user_id, message):
     try:
         await asyncio.wait_for(
-            bot.send_video_note(
-                chat_id=partner_id,
-                video_note=message.video_note.file_id
-            ),
+            bot.send_video_note(chat_id=partner_id, video_note=message.video_note.file_id),
             timeout=40
         )
         logger.info(f"🎥 ВИДЕОКРУЖ: {user_id} -> {partner_id}")
     except TelegramBadRequest as e:
-        logger.warning(f"⚠️ ВИДЕОКРУЖ ОТПРАВЛЕН несмотря на рестрикцию {partner_id}")
+        logger.warning(f"⚠️ ВИДЕОКРУЖ ОТПРАВЛЕН")
     except Exception as e:
         logger.warning(f"⚠️ ВИДЕОКРУЖ ОТПРАВЛЕН")
 
 async def send_sticker(bot, partner_id, user_id, message):
     await asyncio.wait_for(
-        bot.send_sticker(
-            chat_id=partner_id,
-            sticker=message.sticker.file_id
-        ),
+        bot.send_sticker(chat_id=partner_id, sticker=message.sticker.file_id),
         timeout=40
     )
     logger.info(f"😊 СТИКЕР: {user_id} -> {partner_id}")
@@ -558,6 +700,17 @@ async def handle_chat_message(message: Message, state: FSMContext):
             await state.clear()
             active_chats.pop(user_id, None)
             return
+        
+        # 🚫 ПРОВЕРКА НА ЗАПРЕЩЁННЫЙ КОНТЕНТ
+        if message.text:
+            is_forbidden, category = check_forbidden_content(message.text)
+            if is_forbidden:
+                await safe_send_message(
+                    user_id,
+                    f"🚫 <b>Сообщение блокировано</b>\n\nВы пытались отправить запрещённый контент ({category})."
+                )
+                logger.warning(f"🚫 {user_id} попытался отправить {category}")
+                return
         
         if message.text:
             db.save_message(chat_id, user_id, message.text)
@@ -607,7 +760,7 @@ async def vote_callback(callback: CallbackQuery, state: FSMContext):
         vote_text = "👍 Вы оценили собеседника позитивно" if vote_type == "positive" else "👎 Вы оценили собеседника негативно"
         
         await callback.message.edit_text(
-            f"📑 <b>Оценка принята!</b>\n\n{vote_text}\n\n🌟 Паспорт одного пользователя увеличивает его рейтинг и помогает нам находить только респектабельных пользователей",
+            f"📑 <b>Оценка принята!</b>\n\n{vote_text}\n\n🌟 Оценки пользователей помогают нам определить наилучших собеседников!",
             reply_markup=get_main_menu()
         )
         
@@ -615,24 +768,16 @@ async def vote_callback(callback: CallbackQuery, state: FSMContext):
     except Exception as e:
         logger.error(f"❌ Ошибка: {e}")
 
-async def report_callback(callback: CallbackQuery, state: FSMContext):
-    try:
-        await callback.message.edit_text(
-            "🚨 <b>Отчет собеседника</b>\n\nВыберите причину репорта:",
-            reply_markup=None
-        )
-        data_parts = callback.data.split('_')
-        chat_id = data_parts[1]
-        partner_id = int(data_parts[2])
-        await state.set_state(UserStates.waiting_report)
-        await state.update_data(chat_id=chat_id, partner_id=partner_id)
-    except Exception as e:
-        logger.error(f"❌ Ошибка: {e}")
-
 async def search_start_callback(callback: CallbackQuery, state: FSMContext):
     global user_fsm_contexts
     try:
         user_id = callback.from_user.id
+        
+        # Проверяем бан
+        if db.is_user_banned(user_id):
+            await callback.answer("❌ Вы банны в этом боте", show_alert=True)
+            return
+        
         user = db.get_user(user_id)
         user_fsm_contexts[user_id] = state
         
@@ -668,28 +813,24 @@ async def next_partner_callback(callback: CallbackQuery, state: FSMContext):
             active_chats.pop(user_id, None)
             active_chats.pop(partner_id, None)
             
-            # 📣 ОУВЕДОМЛЯЕМ ОБОИХ ОДИНАКОВО!
             voting_message = "📑 <b>Оцените собеседника</b>\n\n👍 Нравится или Не нравится? Ваша оценка важна!"
             
-            # ПАРТНЕРУ - НОВОЕ сообщение
             await safe_send_message(
                 partner_id,
                 voting_message,
                 reply_markup=get_vote_keyboard(chat_id, user_id)
             )
             
-            # ТЕКУЩЕМУ - НОВОЕ сообщение (НЕ EDIT_TEXT!)
             await safe_send_message(
                 user_id,
                 voting_message,
                 reply_markup=get_vote_keyboard(chat_id, partner_id)
             )
             
-            logger.info(f"📣 next_partner: ОБА пользователя идентично оценили")
+            logger.info(f"📣 next_partner: ОБА пользователя ")
         
         await state.clear()
         
-        # Начинаем поиск текущего пользователя
         await callback.message.edit_text("🔍 <b>Поиск собеседника...</b>")
         partner_id, chat_id = await find_partner(user_id, 'random', {}, bot_instance, state)
         
@@ -717,23 +858,20 @@ async def end_chat_callback(callback: CallbackQuery, state: FSMContext):
             active_chats.pop(user_id, None)
             active_chats.pop(partner_id, None)
             
-            # 📣 ОУВЕДОМЛЯЕМ ОБОИХ ОДИНАКОВО!
             voting_message = "📑 <b>Оцените собеседника</b>\n\n👍 Нравится или Не нравится? Ваша оценка важна!"
             
-            # ПАРТНЕРУ - НОВОЕ сообщение
             await safe_send_message(
                 partner_id,
                 voting_message,
                 reply_markup=get_vote_keyboard(chat_id, user_id)
             )
             
-            # ТЕКУЩЕМУ - ОБНОВЛЯЕМ EDIT_TEXT
             await callback.message.edit_text(
                 voting_message,
                 reply_markup=get_vote_keyboard(chat_id, partner_id)
             )
             
-            logger.info(f"📣 end_chat: ОБА пользователя идентично оценили")
+            logger.info(f"📣 end_chat: ОБА пользователя ")
         
         await state.clear()
     except Exception as e:
@@ -748,6 +886,9 @@ async def main():
         dp = Dispatcher()
         
         dp.message.register(cmd_start, Command("start"))
+        dp.message.register(cmd_privacy, Command("privacy"))
+        dp.message.register(cmd_terms, Command("terms"))
+        dp.message.register(cmd_delete_my_data, Command("delete_my_data"))
         dp.message.register(cmd_search, Command("search"))
         dp.message.register(cmd_next, Command("next"))
         dp.message.register(cmd_stop, Command("stop"))
@@ -756,14 +897,13 @@ async def main():
         dp.callback_query.register(next_partner_callback, F.data == "next_partner")
         dp.callback_query.register(end_chat_callback, F.data == "end_chat")
         dp.callback_query.register(vote_callback, F.data.startswith("vote_"))
-        dp.callback_query.register(report_callback, F.data.startswith("report_"))
         
         dp.message.register(handle_chat_message, UserStates.in_chat)
         
-        logger.info("✅ БОТ СТАРТОВАЛ")
-        logger.info("📣 /next + /stop + кнопки ОДИНАКОВО работают")
-        logger.info("📣 НОВОЕ сообщение у ОБОИХ для next_partner_callback")
-        logger.info("✅ ОБА МОГУТ ОЦЕНИТЬ ДРУГ ДРУГА")
+        logger.info("👫 ООО PRIVACY POLICY, TERMS, DATA DELETION")
+        logger.info("🚫 FORBIDDEN CONTENT FILTER")
+        logger.info("🚫 BAN SYSTEM")
+        logger.info("✅ БОТ ПОЛНОСТЬЩО СООТвЕТСТВУЕТ TELEGRAM TOS")
         await dp.start_polling(bot_instance)
     except Exception as e:
         logger.error(f"❌ Критическая: {e}")
