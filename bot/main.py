@@ -53,7 +53,8 @@ class Database:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
-            cursor.execute('''\n                CREATE TABLE IF NOT EXISTS users (
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS users (
                     user_id INTEGER PRIMARY KEY,
                     username TEXT,
                     first_name TEXT,
@@ -76,7 +77,8 @@ class Database:
                 )
             ''')
             
-            cursor.execute('''\n                CREATE TABLE IF NOT EXISTS chats (
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS chats (
                     chat_id TEXT PRIMARY KEY,
                     user1_id INTEGER NOT NULL,
                     user2_id INTEGER NOT NULL,
@@ -87,7 +89,8 @@ class Database:
                 )
             ''')
             
-            cursor.execute('''\n                CREATE TABLE IF NOT EXISTS messages (
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS messages (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     chat_id TEXT NOT NULL,
                     sender_id INTEGER NOT NULL,
@@ -97,7 +100,8 @@ class Database:
                 )
             ''')
             
-            cursor.execute('''\n                CREATE TABLE IF NOT EXISTS reports (
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS reports (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     chat_id TEXT NOT NULL,
                     reporter_id INTEGER NOT NULL,
@@ -107,7 +111,8 @@ class Database:
                 )
             ''')
             
-            cursor.execute('''\n                CREATE TABLE IF NOT EXISTS votes (
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS votes (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     voter_id INTEGER NOT NULL,
                     votee_id INTEGER NOT NULL,
@@ -117,7 +122,8 @@ class Database:
                 )
             ''')
             
-            cursor.execute('''\n                CREATE TABLE IF NOT EXISTS payments (
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS payments (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL,
                     amount INTEGER,
@@ -128,7 +134,8 @@ class Database:
                 )
             ''')
             
-            cursor.execute('''\n                CREATE TABLE IF NOT EXISTS banned_users (
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS banned_users (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL UNIQUE,
                     reason TEXT,
@@ -147,7 +154,8 @@ class Database:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            cursor.execute('''\n                INSERT OR IGNORE INTO users (user_id, username, first_name)
+            cursor.execute('''
+                INSERT OR IGNORE INTO users (user_id, username, first_name)
                 VALUES (?, ?, ?)
             ''', (user_id, username, first_name))
             conn.commit()
@@ -172,7 +180,8 @@ class Database:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            cursor.execute('''\n                SELECT expires_at FROM banned_users 
+            cursor.execute('''
+                SELECT expires_at FROM banned_users 
                 WHERE user_id = ? AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)
             ''', (user_id,))
             result = cursor.fetchone()
@@ -191,7 +200,8 @@ class Database:
             if duration_days:
                 expires_at = (datetime.now() + timedelta(days=duration_days)).isoformat()
             
-            cursor.execute('''\n                INSERT OR REPLACE INTO banned_users (user_id, reason, expires_at)
+            cursor.execute('''
+                INSERT OR REPLACE INTO banned_users (user_id, reason, expires_at)
                 VALUES (?, ?, ?)
             ''', (user_id, reason, expires_at))
             
@@ -219,7 +229,8 @@ class Database:
             expires_at = (datetime.now() + timedelta(days=months * 30)).isoformat()
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            cursor.execute('''\n                UPDATE users SET is_premium = 1, premium_expires_at = ?
+            cursor.execute('''
+                UPDATE users SET is_premium = 1, premium_expires_at = ?
                 WHERE user_id = ?
             ''', (expires_at, user_id))
             conn.commit()
@@ -235,7 +246,8 @@ class Database:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            cursor.execute('''\n                UPDATE users SET is_premium = 0, premium_expires_at = NULL
+            cursor.execute('''
+                UPDATE users SET is_premium = 0, premium_expires_at = NULL
                 WHERE user_id = ?
             ''', (user_id,))
             conn.commit()
@@ -270,7 +282,8 @@ class Database:
             chat_id = str(uuid.uuid4())
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            cursor.execute('''\n                INSERT INTO chats (chat_id, user1_id, user2_id, category, status)
+            cursor.execute('''
+                INSERT INTO chats (chat_id, user1_id, user2_id, category, status)
                 VALUES (?, ?, ?, ?, 'active')
             ''', (chat_id, user1_id, user2_id, category))
             conn.commit()
@@ -284,7 +297,8 @@ class Database:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            cursor.execute('''\n                INSERT INTO messages (chat_id, sender_id, content)
+            cursor.execute('''
+                INSERT INTO messages (chat_id, sender_id, content)
                 VALUES (?, ?, ?)
             ''', (chat_id, sender_id, content))
             conn.commit()
@@ -296,7 +310,8 @@ class Database:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            cursor.execute('''\n                UPDATE chats SET status = "ended", ended_at = CURRENT_TIMESTAMP
+            cursor.execute('''
+                UPDATE chats SET status = "ended", ended_at = CURRENT_TIMESTAMP
                 WHERE chat_id = ?
             ''', (chat_id,))
             conn.commit()
@@ -309,7 +324,8 @@ class Database:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            cursor.execute('''\n                INSERT INTO reports (chat_id, reporter_id, reported_user_id, reason)
+            cursor.execute('''
+                INSERT INTO reports (chat_id, reporter_id, reported_user_id, reason)
                 VALUES (?, ?, ?, ?)
             ''', (chat_id, reporter_id, reported_user_id, reason))
             conn.commit()
@@ -321,7 +337,8 @@ class Database:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            cursor.execute('''\n                INSERT INTO votes (voter_id, votee_id, chat_id, vote_type)
+            cursor.execute('''
+                INSERT INTO votes (voter_id, votee_id, chat_id, vote_type)
                 VALUES (?, ?, ?, ?)
             ''', (voter_id, votee_id, chat_id, vote_type))
             
@@ -394,7 +411,8 @@ class Database:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             
-            cursor.execute('''\n                SELECT user_id, username, first_name, premium_expires_at
+            cursor.execute('''
+                SELECT user_id, username, first_name, premium_expires_at
                 FROM users
                 WHERE is_premium = 1
                 ORDER BY premium_expires_at DESC
@@ -543,7 +561,6 @@ def get_gender_registration_keyboard():
 def get_interests_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💬 Общение", callback_data="interest_general")],
-        [InlineKeyboardButton(text="🔞 Виртуаль и обмен 18+", callback_data="interest_adult")],
         [InlineKeyboardButton(text="🏳️‍🌈 LGBT", callback_data="interest_lgbt")],
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu")],
     ])
@@ -798,6 +815,7 @@ async def cmd_admin_user_info(message: Message):
 📝 Username: @{user['username'] or 'Не установлено'}
 👶 Имя: {user['first_name'] or 'Не установлено'}
 👨‍👩‍👧 Пол: {user['gender'] or 'Не указан'}
+🎂 Возраст: {user['age'] or 'Не указан'}
 
 💳 Премиум: {premium_status}
 ⏰ Срок действия: {user['premium_expires_at'] or 'Отсутствует'}
@@ -972,7 +990,7 @@ async def cmd_start(message: Message, state: FSMContext):
         logger.error(f"❌ Ошибка: {e}")
 
 async def register_gender_callback(callback: CallbackQuery, state: FSMContext):
-    """Регистрация пола пользователя"""
+    """Регистрация пола пользователя и переход к вводу возраста"""
     try:
         user_id = callback.from_user.id
         
@@ -989,14 +1007,60 @@ async def register_gender_callback(callback: CallbackQuery, state: FSMContext):
         
         await callback.answer()
         await callback.message.edit_text(
-            f"✅ <b>Спасибо!</b>\n\nВы выбрали: {gender_text}\n\n🎉 Теперь можете начать поиск собеседника!",
+            f"✅ <b>Спасибо!</b>\n\nВы выбрали: {gender_text}\n\n🎂 <b>Теперь укажите ваш возраст:</b>\n\n⚠️ <b>Минимальный возраст: 18 лет</b>"
+        )
+        
+        await state.set_state(UserStates.waiting_age)
+        logger.info(f"✅ Пользователь {user_id} указал пол: {gender_text}")
+    except Exception as e:
+        logger.error(f"❌ Ошибка: {e}")
+
+async def handle_age_input(message: Message, state: FSMContext):
+    """Обработка ввода возраста"""
+    try:
+        user_id = message.from_user.id
+        
+        # Пытаемся получить возраст
+        try:
+            age = int(message.text)
+        except ValueError:
+            await safe_send_message(
+                user_id,
+                "❌ <b>Ошибка!</b>\n\nПожалуйста, введите число.\n\n🎂 <b>Укажите ваш возраст:</b>"
+            )
+            return
+        
+        # Проверяем минимальный возраст
+        if age < 18:
+            await safe_send_message(
+                user_id,
+                f"❌ <b>К сожалению!</b>\n\nВам {age} лет, а минимальный возраст для использования бота - 18 лет.\n\n🚫 Вы не можете использовать этот бот."
+            )
+            logger.warning(f"🚫 Пользователь {user_id} попытался зарегистрироваться в возрасте {age} лет")
+            await state.clear()
+            return
+        
+        if age > 120:
+            await safe_send_message(
+                user_id,
+                "❌ <b>Ошибка!</b>\n\nПожалуйста, введите корректный возраст.\n\n🎂 <b>Укажите ваш возраст:</b>"
+            )
+            return
+        
+        # Сохраняем возраст в БД
+        db.update_user(user_id, age=age)
+        
+        await safe_send_message(
+            user_id,
+            f"✅ <b>Спасибо!</b>\n\nВам {age} лет.\n\n🎉 Регистрация завершена! Теперь можете начать поиск собеседника!",
             reply_markup=get_main_menu()
         )
         
         await state.clear()
-        logger.info(f"✅ Пользователь {user_id} указал пол: {gender_text}")
+        logger.info(f"✅ Пользователь {user_id} указал возраст: {age} лет")
     except Exception as e:
         logger.error(f"❌ Ошибка: {e}")
+        await safe_send_message(user_id, "❌ <b>Ошибка при обработке возраста!</b>")
 
 async def cmd_rules(message: Message):
     """📄 Правила общения"""
@@ -1007,11 +1071,9 @@ async def cmd_rules(message: Message):
 
 <b>Общаемся по-человечески.</b> Можно спорить, шутить, обсуждать что угодно, но переходить на личности, оскорблять или угрожать — низко. Давай лучше!
 
-<b>18+ контент оставим за дверью.</b> Не отправляй эротику и откровенные предложения без согласия собеседника. Если твой визави против — уважай это.
-
 <b>Верим в хорошее, но проверяем.</b> Если новый друг просит деньги, пароли или странные коды — это 100% мошенник. Блокируй и доложи боту.
 
-<b>Не засоряем эфир.</b> Отправлять десять раз «привет» или ссылки на свои каналы — мовeton.
+<b>Не засоряем эфир.</b> Отправлять десять раз «привет» или ссылки на свои каналы — плохо.
 
 <b>Если ты столкнулся с нарушением этих правил — обязательно пожалуйся!</b> Это помогает всем.
 
@@ -1119,11 +1181,9 @@ async def rules_callback(callback: CallbackQuery):
 
 <b>Общаемся по-человечески.</b> Можно спорить, шутить, обсуждать что угодно, но переходить на личности, оскорблять или угрожать — низко. Давай лучше!
 
-<b>18+ контент оставим за дверью.</b> Не отправляй эротику и откровенные предложения без согласия собеседника. Если твой визави против — уважай это.
-
 <b>Верим в хорошее, но проверяем.</b> Если новый друг просит деньги, пароли или странные коды — это 100% мошенник. Блокируй и доложи боту.
 
-<b>Не засоряем эфир.</b> Отправлять десять раз «привет» или ссылки на свои каналы — мовeton.
+<b>Не засоряем эфир.</b> Отправлять десять раз «привет» или ссылки на свои каналы — плохо.
 
 <b>Если ты столкнулся с нарушением этих правил — обязательно пожалуйся!</b> Это помогает всем.
 
@@ -1276,7 +1336,6 @@ async def interest_select_callback(callback: CallbackQuery):
         user_id = callback.from_user.id
         interest_map = {
             "interest_general": "💬 Общение",
-            "interest_adult": "🔞 Виртуаль и обмен 18+",
             "interest_lgbt": "🏳️‍🌈 LGBT",
         }
         
@@ -1349,7 +1408,8 @@ async def premium_plan_callback(callback: CallbackQuery):
         # Сохраняем платеж в БД как ожидающий подтверждение
         conn = sqlite3.connect(db.db_path)
         cursor = conn.cursor()
-        cursor.execute('''\n            INSERT INTO payments (user_id, amount, plan, status)
+        cursor.execute('''
+            INSERT INTO payments (user_id, amount, plan, status)
             VALUES (?, ?, ?, 'pending')
         ''', (user_id, plan_info["price"], plan_info["name"]))
         conn.commit()
@@ -1790,6 +1850,9 @@ async def main():
         dp.message.register(cmd_admin_list_premium, Command("admin_list_premium"))
         dp.message.register(cmd_admin_help, Command("admin_help"))
         
+        # Обработка ввода возраста
+        dp.message.register(handle_age_input, UserStates.waiting_age)
+        
         # Регистрация callback'ов
         dp.callback_query.register(register_gender_callback, F.data.startswith("register_gender_"))
         dp.callback_query.register(search_start_callback, F.data == "search_start")
@@ -1811,6 +1874,8 @@ async def main():
         dp.message.register(handle_chat_message, UserStates.in_chat)
         
         logger.info("📱 BOT STARTED - ✨ АДМИН КОМАНДЫ АКТИВИРОВАНЫ ✨")
+        logger.info("✅ БЕЗОПАСНОСТЬ: Проверка возраста (18+) активирована")
+        logger.info("✅ ФИЛЬТРАЦИЯ: Проверка на запрещённый контент активирована")
         await dp.start_polling(bot_instance)
     except Exception as e:
         logger.error(f"❌ Критическая: {e}")
