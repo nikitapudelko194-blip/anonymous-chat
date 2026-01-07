@@ -62,6 +62,7 @@ class Database:
                     age INTEGER,
                     interests TEXT,
                     is_premium BOOLEAN DEFAULT 0,
+                    is_vip BOOLEAN DEFAULT 0,
                     premium_expires_at DATETIME,
                     is_banned BOOLEAN DEFAULT 0,
                     ban_reason TEXT,
@@ -207,7 +208,7 @@ class Database:
             
             conn.commit()
             conn.close()
-            logger.warning(f"🚫 Пользователь {user_id} банен: {reason}")
+            logger.warning(f"🚫 Пользователь {user_id} бането: {reason}")
         except Exception as e:
             logger.error(f"❌ Ошибка: {e}")
     
@@ -400,6 +401,7 @@ def get_main_menu():
         [InlineKeyboardButton(text="📄 Правила общения", callback_data="rules")],
         [InlineKeyboardButton(text="❓ Помощь", callback_data="help")],
         [InlineKeyboardButton(text="💳 Премиум", callback_data="premium")],
+        [InlineKeyboardButton(text="👑 VIP", callback_data="vip")],
     ])
 
 def get_search_menu():
@@ -434,6 +436,12 @@ def get_premium_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📈 1 месяц (99₽)", callback_data="premium_1month")],
         [InlineKeyboardButton(text="∞ Пожизненно (499₽)", callback_data="premium_lifetime")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu")],
+    ])
+
+def get_vip_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="👑 Стать VIP (999₽/мес)", callback_data="vip_upgrade")],
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu")],
     ])
 
@@ -492,7 +500,7 @@ async def cmd_rules(message: Message):
 
 <b>📄 НАНУШЕНИЯ ПОЛОЖИЯ:</b>
 • 🚫 <b>НЕ ОФИЦИАЛЬНЫЕ БОТЫ</b> - Пользуйтесь только официальными ботами
-• 🚫 <b>ЕВРОПОЛИETES СОБЛЮДОМ</b> - Уважайте их требования
+• 🚫 <b>ЕВРОПОЛИТЕС СОБЛЮДОМ</b> - Уважайте их требования
 • 🚫 <b>МАЩИТЕ СВОИ ДАННЫЕ</b> - Никогда не ставьте личные данные в открытом виде
 
 📞 <b>КОНТАКТОВ</b>: Оставьте жалобу в случае нарушения
@@ -504,24 +512,38 @@ async def cmd_help(message: Message):
     help_text = """
 ❓ <b>ПОМОЩЬ</b>
 
-<b>🌟 КАК ПОЛЬЗОВАТЬСЯ:</b>
-🔍 /search - Начните поиск собеседника
-📖 Обратитесь к "Выбрать интересы" - Выберите категорию
-💳 Нажмите ПРЕМИУМ - Получите дополнительные финанства
-/next - Перейти к следующему собеседнику
-/stop - Окончить текущий диалог
+🤖 <b>ЭТО БОТ ДЛЯ АНОНИМНОГО ОБЩЕНИЯ В ТЕЛЕГРАМЕ</b>
 
-<b>🔧 КУСТОМИЗАЦИЯ:</b>
-👫 У при у премиум-за вы можете выбирать собеседников по полу
-📖 Объявите свои интересы в "Выбрать интересы"
+Бот умеет пересылать сообщения, фото, видео, гифки, стикеры, аудиосообщения и видеосообщения.
 
-<b>🌟 ОПОЛЧЕНИЕ:</b>
-💳 ПРЕМИУМ предоставляет:
+<b>📋 ОСНОВНЫЕ КОМАНДЫ:</b>
+/search - поиск собеседника
+/next - закончить текущий диалог и сразу же искать нового собеседника
+/stop - закончить разговор с собеседником
+/interests - выбрать интересы поиска
+/pay - поиск по полу, оформление и управление премиумом
+/vip - стать VIP-пользователем
+/link - отправить собеседнику ссылку на вас в Телеграме
+/rules - ознакомиться с правилами
+
+<b>💡 КАК ПОЛЬЗОВАТЬСЯ:</b>
+• Нажмите /search чтобы начать поиск
+• Выберите категорию интересов в /interests
+• Используйте /next для смены собеседника
+• /stop для завершения диалога
+
+<b>💎 ПРЕМИУМ ФУНКЦИИ:</b>
 • 🔍 Поиск по полу
-• 📋 Приоритетные собеседники
-• 💡 Статистика и аналитика
+• 👤 Приоритетные собеседники
+• 📊 Статистика и аналитика
 
-📞 Если у вас есть вопросы, обратитесь к администратору @Dontonu
+<b>👑 VIP ФУНКЦИИ:</b>
+• ⭐ Все премиум функции
+• 🎁 Эксклюзивные возможности
+• 🚀 Приоритет в очереди
+
+📞 <b>ПОДДЕРЖКА:</b>
+По любым вопросам обращаться к @Dontonu
 """
     await safe_send_message(message.from_user.id, help_text)
 
@@ -569,6 +591,60 @@ async def cmd_search(message: Message, state: FSMContext):
     except Exception as e:
         logger.error(f"❌ Ошибка: {e}")
 
+async def cmd_interests(message: Message):
+    """Выбор интересов"""
+    try:
+        user_id = message.from_user.id
+        await safe_send_message(
+            user_id,
+            "📖 <b>Выберите категорию интересов:</b>",
+            reply_markup=get_interests_keyboard()
+        )
+    except Exception as e:
+        logger.error(f"❌ Ошибка: {e}")
+
+async def cmd_pay(message: Message):
+    """Премиум и поиск по полу"""
+    try:
+        user_id = message.from_user.id
+        await safe_send_message(
+            user_id,
+            "💳 <b>ПРЕМИУМ И ПОИСК ПО ПОЛУ</b>\n\n/pay команда для управления подписками",
+            reply_markup=get_premium_keyboard()
+        )
+    except Exception as e:
+        logger.error(f"❌ Ошибка: {e}")
+
+async def cmd_vip(message: Message):
+    """VIP подписка"""
+    try:
+        user_id = message.from_user.id
+        await safe_send_message(
+            user_id,
+            "👑 <b>VIP ПОДПИСКА</b>\n\nПолучите эксклюзивные функции и приоритет!",
+            reply_markup=get_vip_keyboard()
+        )
+    except Exception as e:
+        logger.error(f"❌ Ошибка: {e}")
+
+async def cmd_link(message: Message):
+    """Отправить ссылку на себя"""
+    try:
+        user_id = message.from_user.id
+        user = db.get_user(user_id)
+        
+        if not user or not user['username']:
+            await safe_send_message(user_id, "❌ У вас нет юзернейма в Телеграме. Установите его в настройках профиля.")
+            return
+        
+        link_text = f"Привет! Мой профиль Телеграма: @{user['username']}"
+        
+        data = await message.bot.get_updates()
+        # Отправляем ссылку собеседнику если он есть
+        await safe_send_message(user_id, f"📎 <b>Ссылка на вас:</b>\n\n<code>@{user['username']}</code>")
+    except Exception as e:
+        logger.error(f"❌ Ошибка: {e}")
+
 async def search_random_callback(callback: CallbackQuery, state: FSMContext):
     """Обычный поиск без фильтра по полу"""
     try:
@@ -599,7 +675,6 @@ async def search_gender_check_callback(callback: CallbackQuery):
             await callback.answer("💳 ПОИСК ПО ПОЛУ Доступен только для ПРЕМИУМ!", show_alert=True)
             return
         
-        # TODO: Реализовать поиск с фильтром по полу
         await callback.answer("🔍 Та функция будет реализована позже", show_alert=True)
     except Exception as e:
         logger.error(f"❌ Ошибка: {e}")
@@ -718,7 +793,79 @@ async def premium_plan_callback(callback: CallbackQuery):
         
         # Отправить админу уведомление
         try:
-            admin_msg = f"📈 НОВАЯ ПОПА\nПользователь ID: {user_id}\nПлан: {plan_info['name']} - {plan_info['price']}₽"
+            admin_msg = f"📈 НОВАЯ ПОДПИСКА\nПользователь ID: {user_id}\nПлан: {plan_info['name']} - {plan_info['price']}₽"
+            if ADMIN_ID:
+                await bot_instance.send_message(ADMIN_ID, admin_msg)
+        except:
+            pass
+    except Exception as e:
+        logger.error(f"❌ Ошибка: {e}")
+
+async def vip_callback(callback: CallbackQuery):
+    """VIP функции"""
+    try:
+        user_id = callback.from_user.id
+        user = db.get_user(user_id)
+        
+        if user and user['is_vip']:
+            await callback.answer("👑 У вас уже есть VIP!", show_alert=True)
+            return
+        
+        await callback.answer()
+        vip_text = """
+👑 <b>VIP ПОДПИСКА</b>
+
+<b>⭐ ПРЕМИУМ ФУНКЦИИ:</b>
+• 🔍 Поиск по полу
+• 📋 Приоритетные собеседники
+• ✏️ Без рекламы
+
+<b>🎁 ЭКСКЛЮЗИВНЫЕ ВОЗМОЖНОСТИ:</b>
+• 🚀 Приоритет в очереди поиска
+• 💎 Эксклюзивные события
+• 🎯 Специальный статус VIP
+
+💎 <b>СТОИМОСТЬ:</b> 999₽/месяц
+
+📞 Для оформления обращайтесь к @Dontonu
+"""
+        
+        await callback.message.edit_text(vip_text, reply_markup=get_vip_keyboard())
+    except Exception as e:
+        logger.error(f"❌ Ошибка: {e}")
+
+async def vip_upgrade_callback(callback: CallbackQuery):
+    """Апгрейд до VIP"""
+    try:
+        user_id = callback.from_user.id
+        
+        conn = sqlite3.connect(db.db_path)
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO payments (user_id, amount, plan, status)
+            VALUES (?, ?, ?, 'pending')
+        ''', (user_id, 999, 'VIP'))
+        conn.commit()
+        conn.close()
+        
+        vip_text = f"""
+👑 <b>VIP ПОДПИСКА</b>
+💰 <b>ЦЕНА: 999₽/месяц</b>
+
+📝 <b>ДЛЯ ОПЛАТЫ:</b>
+1. Обратитесь к администратору
+2. Отправьте свою ID: <code>{user_id}</code>
+3. Проверьте ваш VIP статус
+
+📞 Администратор: @Dontonu
+"""
+        
+        await callback.answer()
+        await callback.message.edit_text(vip_text, reply_markup=get_main_menu())
+        
+        # Уведомление админу
+        try:
+            admin_msg = f"👑 НОВЫЙ VIP\nПользователь ID: {user_id}\nПлан: VIP - 999₽/месяц"
             if ADMIN_ID:
                 await bot_instance.send_message(ADMIN_ID, admin_msg)
         except:
@@ -852,7 +999,7 @@ async def send_video_note(bot, partner_id, user_id, message):
             bot.send_video_note(chat_id=partner_id, video_note=message.video_note.file_id),
             timeout=40
         )
-        logger.info(f"🎥 ВИДЕОКРУЖ: {user_id} -> {partner_id}")
+        logger.info(f"📹 ВИДЕОКРУЖ: {user_id} -> {partner_id}")
     except TelegramBadRequest as e:
         logger.warning(f"⚠️ ВИДЕОКРУЖ ОТПРАВЛЕН")
     except Exception as e:
@@ -904,7 +1051,7 @@ async def handle_chat_message(message: Message, state: FSMContext):
         elif message.video:
             db.save_message(chat_id, user_id, "[🎬 Обычное видео]")
         elif message.video_note:
-            db.save_message(chat_id, user_id, "[🎥 Видеокруж]")
+            db.save_message(chat_id, user_id, "[📹 Видеокруж]")
         elif message.sticker:
             db.save_message(chat_id, user_id, "[😊 Стикер]")
         
@@ -958,7 +1105,13 @@ async def setup_menu_button(bot: Bot):
             BotCommand(command="search", description="🔍 Начать поиск собеседника"),
             BotCommand(command="next", description="➡️ Перейти к следующему"),
             BotCommand(command="stop", description="🛑 Завершить диалог"),
-            BotCommand(command="start", description="👋 Начальное меню"),
+            BotCommand(command="interests", description="📖 Выбрать интересы"),
+            BotCommand(command="pay", description="💳 Премиум и поиск по полу"),
+            BotCommand(command="vip", description="👑 VIP подписка"),
+            BotCommand(command="link", description="🔗 Ссылка на вас"),
+            BotCommand(command="rules", description="📄 Правила общения"),
+            BotCommand(command="help", description="❓ Помощь"),
+            BotCommand(command="start", description="👋 Главное меню"),
         ]
         
         await bot.set_my_commands(commands)
@@ -983,6 +1136,10 @@ async def main():
         dp.message.register(cmd_help, Command("help"))
         dp.message.register(cmd_delete_my_data, Command("delete_my_data"))
         dp.message.register(cmd_search, Command("search"))
+        dp.message.register(cmd_interests, Command("interests"))
+        dp.message.register(cmd_pay, Command("pay"))
+        dp.message.register(cmd_vip, Command("vip"))
+        dp.message.register(cmd_link, Command("link"))
         dp.message.register(cmd_next, Command("next"))
         dp.message.register(cmd_stop, Command("stop"))
         
@@ -992,12 +1149,14 @@ async def main():
         dp.callback_query.register(interest_select_callback, F.data.startswith("interest_"))
         dp.callback_query.register(premium_callback, F.data == "premium")
         dp.callback_query.register(premium_plan_callback, F.data.startswith("premium_"))
+        dp.callback_query.register(vip_callback, F.data == "vip")
+        dp.callback_query.register(vip_upgrade_callback, F.data == "vip_upgrade")
         dp.callback_query.register(back_to_menu_callback, F.data == "back_to_menu")
         dp.callback_query.register(vote_callback, F.data.startswith("vote_"))
         
         dp.message.register(handle_chat_message, UserStates.in_chat)
         
-        logger.info("📱 BOT STARTED - ПРЕМИУМ и категории включены")
+        logger.info("📱 BOT STARTED - ПРЕМИУМ, VIP и все команды включены")
         await dp.start_polling(bot_instance)
     except Exception as e:
         logger.error(f"❌ Критическая: {e}")
