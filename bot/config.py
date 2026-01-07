@@ -15,7 +15,7 @@ DB_PATH = os.getenv('DATABASE_PATH', 'chat_bot.db')
 # Admin ID (optional)
 ADMIN_ID = os.getenv('ADMIN_ID')
 
-# Subscription costs (in Telegram Stars)
+# Subscription costs (in rubles)
 SUBSCRIPTION_COST_MONTHLY = int(os.getenv('SUBSCRIPTION_COST_MONTHLY', 99))
 SUBSCRIPTION_COST_LIFETIME = int(os.getenv('SUBSCRIPTION_COST_LIFETIME', 499))
 
