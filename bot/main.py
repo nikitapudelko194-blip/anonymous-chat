@@ -635,7 +635,7 @@ async def rules_callback(callback: CallbackQuery):
         logger.error(f"❌ Ошибка: {e}")
 
 async def cmd_delete_my_data(message: Message):
-    """🗑️ Отметнут все данные пользователя"""
+    """🗑️ Отметить все данные пользователя"""
     user_id = message.from_user.id
     
     try:
@@ -653,67 +653,28 @@ async def cmd_delete_my_data(message: Message):
         logger.error(f"❌ Ошибка: {e}")
         await safe_send_message(user_id, "❌ Ошибка при удалении данных")
 
-async def cmd_search(message: Message, state: FSMContext):
-    global user_fsm_contexts
+async def search_start_callback(callback: CallbackQuery, state: FSMContext):
+    """🔍 Начать поиск с главного меню"""
     try:
-        user_id = message.from_user.id
+        user_id = callback.from_user.id
         
         # Проверяем бан
         if db.is_user_banned(user_id):
-            await safe_send_message(user_id, "❌ <b>Вы банны в этом боте</b>")
+            await callback.answer("❌ Вы банны в этом боте", show_alert=True)
             return
         
         user = db.get_user(user_id)
         user_fsm_contexts[user_id] = state
         
         if user_id in active_chats:
-            await safe_send_message(user_id, "⚠️ <b>Вы уже в диалоге!</b>\n\nНапишите /next чтобы перейти к следующему собеседнику")
+            await callback.answer("⚠️ Вы уже в диалоге! Используйте /next или /stop")
             return
         
-        await safe_send_message(
-            user_id,
+        await callback.answer()
+        await callback.message.edit_text(
             "🔍 <b>Выберите тип поиска:</b>",
             reply_markup=get_search_menu()
         )
-    except Exception as e:
-        logger.error(f"❌ Ошибка: {e}")
-
-async def cmd_interests(message: Message):
-    """Выбор интересов"""
-    try:
-        user_id = message.from_user.id
-        await safe_send_message(
-            user_id,
-            "📖 <b>Выберите категорию интересов:</b>",
-            reply_markup=get_interests_keyboard()
-        )
-    except Exception as e:
-        logger.error(f"❌ Ошибка: {e}")
-
-async def cmd_pay(message: Message):
-    """Премиум и поиск по полу"""
-    try:
-        user_id = message.from_user.id
-        await safe_send_message(
-            user_id,
-            "💳 <b>ПРЕМИУМ И ПОИСК ПО ПОЛУ</b>\n\n/pay команда для управления подписками",
-            reply_markup=get_premium_keyboard()
-        )
-    except Exception as e:
-        logger.error(f"❌ Ошибка: {e}")
-
-async def cmd_link(message: Message):
-    """Отправить ссылку на себя"""
-    try:
-        user_id = message.from_user.id
-        user = db.get_user(user_id)
-        
-        if not user or not user['username']:
-            await safe_send_message(user_id, "❌ У вас нет юзернейма в Телеграме. Установите его в настройках профиля.")
-            return
-        
-        link_text = f"Привет! Мой профиль Телеграма: @{user['username']}"
-        await safe_send_message(user_id, f"🔗 <b>Ссылка на вас:</b>\n\n<code>@{user['username']}</code>")
     except Exception as e:
         logger.error(f"❌ Ошибка: {e}")
 
@@ -733,7 +694,7 @@ async def search_random_callback(callback: CallbackQuery, state: FSMContext):
         else:
             await callback.message.edit_text("⏳ <b>Ожидание собеседника...</b>\n\n🔍 Мы ищем нового собеседника для вас")
             await state.set_state(UserStates.in_chat)
-            await state.update_data(chat_id=None, partner_id=None, category='random')
+            await state.update_data(chat_id=None, partner_id=None, category='random', waiting=True)
     except Exception as e:
         logger.error(f"❌ Ошибка: {e}")
 
@@ -882,6 +843,136 @@ async def back_to_menu_callback(callback: CallbackQuery):
             "👋 <b>Главное меню</b>",
             reply_markup=get_main_menu()
         )
+    except Exception as e:
+        logger.error(f"❌ Ошибка: {e}")
+
+async def cmd_search(message: Message, state: FSMContext):
+    global user_fsm_contexts
+    try:
+        user_id = message.from_user.id
+        
+        # Проверяем бан
+        if db.is_user_banned(user_id):
+            await safe_send_message(user_id, "❌ <b>Вы банны в этом боте</b>")
+            return
+        
+        user = db.get_user(user_id)
+        user_fsm_contexts[user_id] = state
+        
+        if user_id in active_chats:
+            await safe_send_message(user_id, "⚠️ <b>Вы уже в диалоге!</b>\n\nНапишите /next чтобы перейти к следующему собеседнику")
+            return
+        
+        await safe_send_message(
+            user_id,
+            "🔍 <b>Выберите тип поиска:</b>",
+            reply_markup=get_search_menu()
+        )
+    except Exception as e:
+        logger.error(f"❌ Ошибка: {e}")
+
+async def cmd_interests(message: Message):
+    """Выбор интересов"""
+    try:
+        user_id = message.from_user.id
+        await safe_send_message(
+            user_id,
+            "📖 <b>Выберите категорию интересов:</b>",
+            reply_markup=get_interests_keyboard()
+        )
+    except Exception as e:
+        logger.error(f"❌ Ошибка: {e}")
+
+async def cmd_pay(message: Message):
+    """Премиум и поиск по полу"""
+    try:
+        user_id = message.from_user.id
+        await safe_send_message(
+            user_id,
+            "💳 <b>ПРЕМИУМ И ПОИСК ПО ПОЛУ</b>\n\n/pay команда для управления подписками",
+            reply_markup=get_premium_keyboard()
+        )
+    except Exception as e:
+        logger.error(f"❌ Ошибка: {e}")
+
+async def cmd_link(message: Message):
+    """Отправить ссылку на себя"""
+    try:
+        user_id = message.from_user.id
+        user = db.get_user(user_id)
+        
+        if not user or not user['username']:
+            await safe_send_message(user_id, "❌ У вас нет юзернейма в Телеграме. Установите его в настройках профиля.")
+            return
+        
+        link_text = f"Привет! Мой профиль Телеграма: @{user['username']}"
+        await safe_send_message(user_id, f"🔗 <b>Ссылка на вас:</b>\n\n<code>@{user['username']}</code>")
+    except Exception as e:
+        logger.error(f"❌ Ошибка: {e}")
+
+async def next_partner_callback(callback: CallbackQuery, state: FSMContext):
+    """➡️ Переход к следующему собеседнику через кнопку"""
+    try:
+        user_id = callback.from_user.id
+        data = await state.get_data()
+        chat_id = data.get('chat_id')
+        partner_id = data.get('partner_id')
+        
+        await callback.answer()
+        
+        if chat_id and partner_id:
+            db.end_chat(chat_id)
+            active_chats.pop(user_id, None)
+            active_chats.pop(partner_id, None)
+            
+            voting_message = "📋 <b>Оцените собеседника</b>\n\n👍 Нравится или Не нравится? Ваша оценка важна!"
+            
+            await safe_send_message(
+                user_id,
+                voting_message,
+                reply_markup=get_vote_keyboard(chat_id, partner_id)
+            )
+            
+            await safe_send_message(
+                partner_id,
+                voting_message,
+                reply_markup=get_vote_keyboard(chat_id, user_id)
+            )
+        
+        await state.clear()
+        await search_random_callback(callback, state)
+    except Exception as e:
+        logger.error(f"❌ Ошибка: {e}")
+
+async def end_chat_callback(callback: CallbackQuery, state: FSMContext):
+    """🛑 Завершить диалог через кнопку"""
+    try:
+        user_id = callback.from_user.id
+        data = await state.get_data()
+        partner_id = data.get('partner_id')
+        chat_id = data.get('chat_id')
+        
+        await callback.answer()
+        
+        if chat_id and partner_id:
+            db.end_chat(chat_id)
+            active_chats.pop(user_id, None)
+            active_chats.pop(partner_id, None)
+            
+            voting_message = "📋 <b>Оцените собеседника</b>\n\n👍 Нравится или Не нравится? Ваша оценка важна!"
+            
+            await safe_send_message(
+                partner_id,
+                voting_message,
+                reply_markup=get_vote_keyboard(chat_id, user_id)
+            )
+            
+            await callback.message.edit_text(
+                voting_message,
+                reply_markup=get_vote_keyboard(chat_id, partner_id)
+            )
+        
+        await state.clear()
     except Exception as e:
         logger.error(f"❌ Ошибка: {e}")
 
@@ -1096,6 +1187,7 @@ async def vote_callback(callback: CallbackQuery, state: FSMContext):
         )
         
         await state.clear()
+        await callback.answer()
     except Exception as e:
         logger.error(f"❌ Ошибка: {e}")
 
@@ -1131,6 +1223,7 @@ async def main():
         
         await setup_menu_button(bot_instance)
         
+        # Регистрация команд
         dp.message.register(cmd_start, Command("start"))
         dp.message.register(cmd_rules, Command("rules"))
         dp.message.register(cmd_help, Command("help"))
@@ -1142,6 +1235,8 @@ async def main():
         dp.message.register(cmd_next, Command("next"))
         dp.message.register(cmd_stop, Command("stop"))
         
+        # Регистрация callback'ов
+        dp.callback_query.register(search_start_callback, F.data == "search_start")
         dp.callback_query.register(search_random_callback, F.data == "search_random")
         dp.callback_query.register(search_gender_check_callback, F.data == "search_gender_check")
         dp.callback_query.register(choose_interests_callback, F.data == "choose_interests")
@@ -1151,11 +1246,14 @@ async def main():
         dp.callback_query.register(rules_callback, F.data == "rules")
         dp.callback_query.register(help_callback, F.data == "help")
         dp.callback_query.register(back_to_menu_callback, F.data == "back_to_menu")
+        dp.callback_query.register(next_partner_callback, F.data == "next_partner")
+        dp.callback_query.register(end_chat_callback, F.data == "end_chat")
         dp.callback_query.register(vote_callback, F.data.startswith("vote_"))
         
+        # Обработка сообщений в чате
         dp.message.register(handle_chat_message, UserStates.in_chat)
         
-        logger.info("📱 BOT STARTED - Интересы теперь учитываются при поиске!")
+        logger.info("📱 BOT STARTED - Интересы теперь учитываются при поиске! Кнопки поиска работают!")
         await dp.start_polling(bot_instance)
     except Exception as e:
         logger.error(f"❌ Критическая: {e}")
