@@ -236,7 +236,7 @@ class Database:
             
             conn.commit()
             conn.close()
-            logger.info(f"🗑️ Отчищены все данные пользователя {user_id}")
+            logger.info(f"🗑️ Очищены все данные пользователя {user_id}")
             return True
         except Exception as e:
             logger.error(f"❌ Ошибка: {e}")
@@ -354,7 +354,12 @@ def check_forbidden_content(text: str) -> tuple[bool, str]:
 async def find_partner(user_id: int, category: str, search_filters: dict, bot: Bot, state: FSMContext):
     global waiting_users, active_chats, user_fsm_contexts
     
-    for cat in waiting_users:
+    # Получаем интересы текущего пользователя
+    user = db.get_user(user_id)
+    user_interests = user.get('interests', '') if user else ''
+    
+    # Удаляем пользователя из всех очередей
+    for cat in list(waiting_users.keys()):
         if user_id in waiting_users[cat]:
             waiting_users[cat].remove(user_id)
     
@@ -368,11 +373,22 @@ async def find_partner(user_id: int, category: str, search_filters: dict, bot: B
                 waiting_users[category].append(user_id)
                 return None, None
         
+        # 🎯 Проверяем совпадение интересов
+        partner_interests = partner.get('interests', '') if partner else ''
+        
+        # Если интересы совпадают или хотя бы один из них не установил интересы, продолжаем
+        if user_interests and partner_interests and user_interests != partner_interests:
+            # Интересы не совпадают - возвращаем обоих в очередь
+            waiting_users[category].append(partner_id)
+            waiting_users[category].append(user_id)
+            logger.info(f"🎯 {user_id} и {partner_id} имеют разные интересы: '{user_interests}' vs '{partner_interests}'")
+            return None, None
+        
         chat_id = db.create_chat(user_id, partner_id, category)
         active_chats[user_id] = {'partner_id': partner_id, 'chat_id': chat_id}
         active_chats[partner_id] = {'partner_id': user_id, 'chat_id': chat_id}
         
-        logger.info(f"✅ Матч: {user_id} <-> {partner_id}")
+        logger.info(f"✅ Матч: {user_id} <-> {partner_id} (интересы: {user_interests})")
         
         if partner_id in user_fsm_contexts:
             partner_state = user_fsm_contexts[partner_id]
@@ -427,7 +443,7 @@ def get_vote_keyboard(chat_id, partner_id):
         [InlineKeyboardButton(text="👍 Нравится", callback_data=f"vote_positive_{chat_id}_{partner_id}")],
         [InlineKeyboardButton(text="👎 Не нравится", callback_data=f"vote_negative_{chat_id}_{partner_id}")],
         [InlineKeyboardButton(text="🚨 Отчет", callback_data=f"report_{chat_id}_{partner_id}")],
-        [InlineKeyboardButton(text="⏭️ Новый диалог", callback_data="search_start")],
+        [InlineKeyboardButton(text="↩️ Новый диалог", callback_data="search_start")],
     ])
 
 def get_premium_keyboard():
@@ -487,7 +503,7 @@ async def cmd_rules(message: Message):
 
 <b>Верим в хорошее, но проверяем.</b> Если новый друг просит деньги, пароли или странные коды — это 100% мошенник. Блокируй и доложи боту.
 
-<b>Не засоряем эфир.</b> Отправлять десять раз «привет» или ссылки на свои каналы — моветон.
+<b>Не засоряем эфир.</b> Отправлять десять раз «привет» или ссылки на свои каналы — мовeton.
 
 <b>Если ты столкнулся с нарушением этих правил — обязательно пожалуйся!</b> Это помогает всем.
 
@@ -530,7 +546,7 @@ async def cmd_help(message: Message):
 
 <b>🎮 ПОДДЕРЖИВАЕМЫЕ МЕДИА:</b>
 • 📝 Текстовые сообщения
-• 📸 Фото
+• 📷 Фото
 • 🎥 Видео
 • 🎙️ Аудиосообщения
 • 🎬 Видеосообщения
@@ -570,7 +586,7 @@ async def help_callback(callback: CallbackQuery):
 
 <b>🎮 ПОДДЕРЖИВАЕМЫЕ МЕДИА:</b>
 • 📝 Текстовые сообщения
-• 📸 Фото
+• 📷 Фото
 • 🎥 Видео
 • 🎙️ Аудиосообщения
 • 🎬 Видеосообщения
@@ -599,7 +615,7 @@ async def rules_callback(callback: CallbackQuery):
 
 <b>Верим в хорошее, но проверяем.</b> Если новый друг просит деньги, пароли или странные коды — это 100% мошенник. Блокируй и доложи боту.
 
-<b>Не засоряем эфир.</b> Отправлять десять раз «привет» или ссылки на свои каналы — моветон.
+<b>Не засоряем эфир.</b> Отправлять десять раз «привет» или ссылки на свои каналы — мовeton.
 
 <b>Если ты столкнулся с нарушением этих правил — обязательно пожалуйся!</b> Это помогает всем.
 
@@ -765,6 +781,7 @@ async def interest_select_callback(callback: CallbackQuery):
             f"✅ <b>Интересы сохранены!</b>\n\nВы выбрали: {interest_text}",
             reply_markup=get_main_menu()
         )
+        logger.info(f"🎯 Пользователь {user_id} выбрал интересы: {interest_text}")
     except Exception as e:
         logger.error(f"❌ Ошибка: {e}")
 
@@ -1138,7 +1155,7 @@ async def main():
         
         dp.message.register(handle_chat_message, UserStates.in_chat)
         
-        logger.info("📱 BOT STARTED - Правила обновлены!")
+        logger.info("📱 BOT STARTED - Интересы теперь учитываются при поиске!")
         await dp.start_polling(bot_instance)
     except Exception as e:
         logger.error(f"❌ Критическая: {e}")
