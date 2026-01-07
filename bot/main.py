@@ -53,8 +53,7 @@ class Database:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS users (
+            cursor.execute('''\n                CREATE TABLE IF NOT EXISTS users (
                     user_id INTEGER PRIMARY KEY,
                     username TEXT,
                     first_name TEXT,
@@ -77,8 +76,7 @@ class Database:
                 )
             ''')
             
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS chats (
+            cursor.execute('''\n                CREATE TABLE IF NOT EXISTS chats (
                     chat_id TEXT PRIMARY KEY,
                     user1_id INTEGER NOT NULL,
                     user2_id INTEGER NOT NULL,
@@ -89,8 +87,7 @@ class Database:
                 )
             ''')
             
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS messages (
+            cursor.execute('''\n                CREATE TABLE IF NOT EXISTS messages (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     chat_id TEXT NOT NULL,
                     sender_id INTEGER NOT NULL,
@@ -100,8 +97,7 @@ class Database:
                 )
             ''')
             
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS reports (
+            cursor.execute('''\n                CREATE TABLE IF NOT EXISTS reports (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     chat_id TEXT NOT NULL,
                     reporter_id INTEGER NOT NULL,
@@ -111,8 +107,7 @@ class Database:
                 )
             ''')
             
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS votes (
+            cursor.execute('''\n                CREATE TABLE IF NOT EXISTS votes (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     voter_id INTEGER NOT NULL,
                     votee_id INTEGER NOT NULL,
@@ -122,8 +117,7 @@ class Database:
                 )
             ''')
             
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS payments (
+            cursor.execute('''\n                CREATE TABLE IF NOT EXISTS payments (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL,
                     amount INTEGER,
@@ -134,8 +128,7 @@ class Database:
                 )
             ''')
             
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS banned_users (
+            cursor.execute('''\n                CREATE TABLE IF NOT EXISTS banned_users (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL UNIQUE,
                     reason TEXT,
@@ -154,8 +147,7 @@ class Database:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            cursor.execute('''
-                INSERT OR IGNORE INTO users (user_id, username, first_name)
+            cursor.execute('''\n                INSERT OR IGNORE INTO users (user_id, username, first_name)
                 VALUES (?, ?, ?)
             ''', (user_id, username, first_name))
             conn.commit()
@@ -180,8 +172,7 @@ class Database:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            cursor.execute('''
-                SELECT expires_at FROM banned_users 
+            cursor.execute('''\n                SELECT expires_at FROM banned_users 
                 WHERE user_id = ? AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)
             ''', (user_id,))
             result = cursor.fetchone()
@@ -200,8 +191,7 @@ class Database:
             if duration_days:
                 expires_at = (datetime.now() + timedelta(days=duration_days)).isoformat()
             
-            cursor.execute('''
-                INSERT OR REPLACE INTO banned_users (user_id, reason, expires_at)
+            cursor.execute('''\n                INSERT OR REPLACE INTO banned_users (user_id, reason, expires_at)
                 VALUES (?, ?, ?)
             ''', (user_id, reason, expires_at))
             
@@ -229,8 +219,7 @@ class Database:
             expires_at = (datetime.now() + timedelta(days=months * 30)).isoformat()
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            cursor.execute('''
-                UPDATE users SET is_premium = 1, premium_expires_at = ?
+            cursor.execute('''\n                UPDATE users SET is_premium = 1, premium_expires_at = ?
                 WHERE user_id = ?
             ''', (expires_at, user_id))
             conn.commit()
@@ -246,8 +235,7 @@ class Database:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            cursor.execute('''
-                UPDATE users SET is_premium = 0, premium_expires_at = NULL
+            cursor.execute('''\n                UPDATE users SET is_premium = 0, premium_expires_at = NULL
                 WHERE user_id = ?
             ''', (user_id,))
             conn.commit()
@@ -282,8 +270,7 @@ class Database:
             chat_id = str(uuid.uuid4())
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO chats (chat_id, user1_id, user2_id, category, status)
+            cursor.execute('''\n                INSERT INTO chats (chat_id, user1_id, user2_id, category, status)
                 VALUES (?, ?, ?, ?, 'active')
             ''', (chat_id, user1_id, user2_id, category))
             conn.commit()
@@ -297,8 +284,7 @@ class Database:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO messages (chat_id, sender_id, content)
+            cursor.execute('''\n                INSERT INTO messages (chat_id, sender_id, content)
                 VALUES (?, ?, ?)
             ''', (chat_id, sender_id, content))
             conn.commit()
@@ -310,8 +296,7 @@ class Database:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            cursor.execute('''
-                UPDATE chats SET status = "ended", ended_at = CURRENT_TIMESTAMP
+            cursor.execute('''\n                UPDATE chats SET status = "ended", ended_at = CURRENT_TIMESTAMP
                 WHERE chat_id = ?
             ''', (chat_id,))
             conn.commit()
@@ -324,8 +309,7 @@ class Database:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO reports (chat_id, reporter_id, reported_user_id, reason)
+            cursor.execute('''\n                INSERT INTO reports (chat_id, reporter_id, reported_user_id, reason)
                 VALUES (?, ?, ?, ?)
             ''', (chat_id, reporter_id, reported_user_id, reason))
             conn.commit()
@@ -337,8 +321,7 @@ class Database:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO votes (voter_id, votee_id, chat_id, vote_type)
+            cursor.execute('''\n                INSERT INTO votes (voter_id, votee_id, chat_id, vote_type)
                 VALUES (?, ?, ?, ?)
             ''', (voter_id, votee_id, chat_id, vote_type))
             
@@ -411,8 +394,7 @@ class Database:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             
-            cursor.execute('''
-                SELECT user_id, username, first_name, premium_expires_at
+            cursor.execute('''\n                SELECT user_id, username, first_name, premium_expires_at
                 FROM users
                 WHERE is_premium = 1
                 ORDER BY premium_expires_at DESC
@@ -436,6 +418,7 @@ class UserStates(StatesGroup):
     waiting_report = State()
     selecting_premium_plan = State()
     waiting_payment_confirmation = State()
+    waiting_search_gender = State()
 
 db = Database()
 bot_instance = None
@@ -481,10 +464,13 @@ async def find_partner(user_id: int, category: str, search_filters: dict, bot: B
         partner_id = waiting_users[category].pop(0)
         partner = db.get_user(partner_id)
         
+        # 🔥 ПРОВЕРКА ФИЛЬТРА ПО ПОЛУ
         if search_filters.get('gender') and search_filters['gender'] != 'any':
-            if partner['gender'] != search_filters['gender']:
+            partner_gender = partner.get('gender') if partner else None
+            if partner_gender != search_filters['gender']:
                 waiting_users[category].append(partner_id)
                 waiting_users[category].append(user_id)
+                logger.info(f"❌ Пол не совпадает: ищет {search_filters['gender']}, партнёр {partner_gender}")
                 return None, None
         
         # 🎯 Проверяем совпадение интересов
@@ -536,6 +522,22 @@ def get_search_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔍 Обычный поиск", callback_data="search_random")],
         [InlineKeyboardButton(text="💳 Поиск по полу (Премиум)", callback_data="search_gender_check")],
+    ])
+
+def get_gender_keyboard():
+    """Клавиатура для выбора пола при поиске"""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="👨 Парень", callback_data="search_gender_male")],
+        [InlineKeyboardButton(text="👩 Девушка", callback_data="search_gender_female")],
+        [InlineKeyboardButton(text="🔄 Любой пол", callback_data="search_gender_any")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu")],
+    ])
+
+def get_gender_registration_keyboard():
+    """Клавиатура для выбора пола при регистрации"""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="👨 Парень", callback_data="register_gender_male")],
+        [InlineKeyboardButton(text="👩 Девушка", callback_data="register_gender_female")],
     ])
 
 def get_interests_keyboard():
@@ -795,6 +797,7 @@ async def cmd_admin_user_info(message: Message):
 🆔 ID: <code>{user['user_id']}</code>
 📝 Username: @{user['username'] or 'Не установлено'}
 👶 Имя: {user['first_name'] or 'Не установлено'}
+👨‍👩‍👧 Пол: {user['gender'] or 'Не указан'}
 
 💳 Премиум: {premium_status}
 ⏰ Срок действия: {user['premium_expires_at'] or 'Отсутствует'}
@@ -951,13 +954,47 @@ async def cmd_start(message: Message, state: FSMContext):
         
         if not user:
             db.create_user(user_id, message.from_user.username, message.from_user.first_name)
+            # Просим указать пол
+            await safe_send_message(
+                user_id,
+                "👋 <b>Привет! Добро пожаловать!</b>\n\n👨‍👩 <b>Сначала укажите ваш пол:</b>",
+                reply_markup=get_gender_registration_keyboard()
+            )
+            await state.set_state(UserStates.waiting_gender)
+        else:
+            await safe_send_message(
+                user_id,
+                "👋 <b>Привет! Добро пожаловать обратно!</b>\n\n🌟 Фантастических разговоров в случайных диалогах!",
+                reply_markup=get_main_menu()
+            )
+            await state.clear()
+    except Exception as e:
+        logger.error(f"❌ Ошибка: {e}")
+
+async def register_gender_callback(callback: CallbackQuery, state: FSMContext):
+    """Регистрация пола пользователя"""
+    try:
+        user_id = callback.from_user.id
         
-        await safe_send_message(
-            user_id,
-            "👋 <b>Привет!</b>\n\n👋 Фантастических разговоров в случайных диалогах!",
+        gender_map = {
+            "register_gender_male": "👨 Парень",
+            "register_gender_female": "👩 Девушка",
+        }
+        
+        gender_text = gender_map.get(callback.data)
+        if not gender_text:
+            return
+        
+        db.update_user(user_id, gender=gender_text)
+        
+        await callback.answer()
+        await callback.message.edit_text(
+            f"✅ <b>Спасибо!</b>\n\nВы выбрали: {gender_text}\n\n🎉 Теперь можете начать поиск собеседника!",
             reply_markup=get_main_menu()
         )
+        
         await state.clear()
+        logger.info(f"✅ Пользователь {user_id} указал пол: {gender_text}")
     except Exception as e:
         logger.error(f"❌ Ошибка: {e}")
 
@@ -1169,8 +1206,8 @@ async def search_random_callback(callback: CallbackQuery, state: FSMContext):
     except Exception as e:
         logger.error(f"❌ Ошибка: {e}")
 
-async def search_gender_check_callback(callback: CallbackQuery):
-    """Проверка наличия премиума для поиска по полу"""
+async def search_gender_check_callback(callback: CallbackQuery, state: FSMContext):
+    """Проверка наличия премиума и выбор пола для поиска"""
     try:
         user_id = callback.from_user.id
         user = db.get_user(user_id)
@@ -1179,7 +1216,45 @@ async def search_gender_check_callback(callback: CallbackQuery):
             await callback.answer("💳 ПОИСК ПО ПОЛУ Доступен только для ПРЕМИУМ!", show_alert=True)
             return
         
-        await callback.answer("🔍 Та функция будет реализована позже", show_alert=True)
+        await callback.answer()
+        await callback.message.edit_text(
+            "👨‍👩 <b>Выберите кого вы хотите найти:</b>",
+            reply_markup=get_gender_keyboard()
+        )
+        
+        await state.set_state(UserStates.waiting_search_gender)
+    except Exception as e:
+        logger.error(f"❌ Ошибка: {e}")
+
+async def search_gender_callback(callback: CallbackQuery, state: FSMContext):
+    """Выбор пола для поиска и начало поиска"""
+    try:
+        user_id = callback.from_user.id
+        
+        gender_map = {
+            "search_gender_male": "👨 Парень",
+            "search_gender_female": "👩 Девушка",
+            "search_gender_any": "any",
+        }
+        
+        gender = gender_map.get(callback.data)
+        if not gender:
+            return
+        
+        await callback.answer()
+        await callback.message.edit_text("🔍 <b>Поиск собеседника...</b>")
+        
+        search_filters = {'gender': gender}
+        partner_id, chat_id = await find_partner(user_id, 'gender_filter', search_filters, bot_instance, state)
+        
+        if partner_id:
+            await state.set_state(UserStates.in_chat)
+            await state.update_data(chat_id=chat_id, partner_id=partner_id, category='gender_filter', search_gender=gender)
+            await callback.message.edit_text("🌟 <b>Новый собеседник найден!</b>\n\n💬 Диалог начат. Напишите /next чтобы перейти к следующему собеседнику", reply_markup=get_chat_actions_keyboard())
+        else:
+            await callback.message.edit_text("⏳ <b>Ожидание собеседника...</b>\n\n🔍 Мы ищем нового собеседника для вас с фильтром по полу")
+            await state.set_state(UserStates.in_chat)
+            await state.update_data(chat_id=None, partner_id=None, category='gender_filter', waiting=True, search_gender=gender)
     except Exception as e:
         logger.error(f"❌ Ошибка: {e}")
 
@@ -1274,8 +1349,7 @@ async def premium_plan_callback(callback: CallbackQuery):
         # Сохраняем платеж в БД как ожидающий подтверждение
         conn = sqlite3.connect(db.db_path)
         cursor = conn.cursor()
-        cursor.execute('''
-            INSERT INTO payments (user_id, amount, plan, status)
+        cursor.execute('''\n            INSERT INTO payments (user_id, amount, plan, status)
             VALUES (?, ?, ?, 'pending')
         ''', (user_id, plan_info["price"], plan_info["name"]))
         conn.commit()
@@ -1717,9 +1791,11 @@ async def main():
         dp.message.register(cmd_admin_help, Command("admin_help"))
         
         # Регистрация callback'ов
+        dp.callback_query.register(register_gender_callback, F.data.startswith("register_gender_"))
         dp.callback_query.register(search_start_callback, F.data == "search_start")
         dp.callback_query.register(search_random_callback, F.data == "search_random")
         dp.callback_query.register(search_gender_check_callback, F.data == "search_gender_check")
+        dp.callback_query.register(search_gender_callback, F.data.startswith("search_gender_"))
         dp.callback_query.register(choose_interests_callback, F.data == "choose_interests")
         dp.callback_query.register(interest_select_callback, F.data.startswith("interest_"))
         dp.callback_query.register(premium_callback, F.data == "premium")
