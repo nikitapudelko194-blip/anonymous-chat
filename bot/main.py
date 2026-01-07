@@ -223,6 +223,41 @@ class Database:
         except Exception as e:
             logger.error(f"❌ Ошибка: {e}")
     
+    def give_premium(self, user_id, months):
+        """Выдать премиум на N месяцев"""
+        try:
+            expires_at = (datetime.now() + timedelta(days=months * 30)).isoformat()
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE users SET is_premium = 1, premium_expires_at = ?
+                WHERE user_id = ?
+            ''', (expires_at, user_id))
+            conn.commit()
+            conn.close()
+            logger.info(f"✅ Премиум выдан {user_id} на {months} месяцев до {expires_at}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Ошибка: {e}")
+            return False
+    
+    def remove_premium(self, user_id):
+        """Забрать премиум"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE users SET is_premium = 0, premium_expires_at = NULL
+                WHERE user_id = ?
+            ''', (user_id,))
+            conn.commit()
+            conn.close()
+            logger.info(f"✅ Премиум забран у {user_id}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Ошибка: {e}")
+            return False
+    
     def delete_user_data(self, user_id):
         try:
             conn = sqlite3.connect(self.db_path)
@@ -351,6 +386,10 @@ def check_forbidden_content(text: str) -> tuple[bool, str]:
     
     return False, ""
 
+def is_admin(user_id: int) -> bool:
+    """Проверка, является ли пользователь администратором"""
+    return user_id == ADMIN_ID
+
 async def find_partner(user_id: int, category: str, search_filters: dict, bot: Bot, state: FSMContext):
     global waiting_users, active_chats, user_fsm_contexts
     
@@ -464,6 +503,285 @@ async def safe_send_message(chat_id, text, reply_markup=None, timeout=30):
     except Exception as e:
         logger.error(f"❌ Ошибка: {e}")
         return False
+
+# ═══════════════════════════════════════════════════════════════════════════════════════════
+# 👑 АДМИН КОМАНДЫ
+# ═══════════════════════════════════════════════════════════════════════════════════════════
+
+async def cmd_admin_give_premium(message: Message):
+    """👑 /admin_give_premium <user_id> <months> - Выдать премиум"""
+    if not is_admin(message.from_user.id):
+        await safe_send_message(message.from_user.id, "❌ <b>Доступ запрещён!</b>\n\nЭта команда только для администратора.")
+        return
+    
+    try:
+        args = message.text.split()
+        if len(args) < 3:
+            await safe_send_message(
+                message.from_user.id,
+                "❌ <b>Неправильный формат!</b>\n\nИспользование:\n<code>/admin_give_premium 123456789 1</code>\n\n📝 Параметры:\n• user_id - ID пользователя\n• months - количество месяцев (1, 3, 6, 12, 999 для пожизненного)"
+            )
+            return
+        
+        user_id = int(args[1])
+        months = int(args[2])
+        
+        # Если указано 999, выдаём пожизненный премиум
+        if months >= 100:
+            months = 3650  # 10 лет
+        
+        success = db.give_premium(user_id, months)
+        
+        if success:
+            user = db.get_user(user_id)
+            username = f"@{user['username']}" if user and user['username'] else "ID: " + str(user_id)
+            
+            await safe_send_message(
+                message.from_user.id,
+                f"✅ <b>Премиум выдан!</b>\n\n👤 {username}\n⏱️ На {months} месяцев\n✨ Срок действия обновлён"
+            )
+            
+            # Отправляем уведомление пользователю
+            try:
+                premium_text = "✨ <b>Поздравляем!</b>\n\nВам выдан ПРЕМИУМ статус!\n🎉 Теперь вам доступны все преимущества!"
+                await bot_instance.send_message(user_id, premium_text)
+            except:
+                pass
+            
+            logger.info(f"✅ АДМИН: Премиум выдан пользователю {user_id} на {months} месяцев")
+        else:
+            await safe_send_message(message.from_user.id, "❌ <b>Ошибка!</b>\n\nНе удалось выдать премиум.")
+    
+    except ValueError:
+        await safe_send_message(message.from_user.id, "❌ <b>Ошибка!</b>\n\nID и количество месяцев должны быть числами.")
+    except Exception as e:
+        logger.error(f"❌ Ошибка команды: {e}")
+        await safe_send_message(message.from_user.id, f"❌ <b>Ошибка!</b>\n\n{str(e)}")
+
+async def cmd_admin_remove_premium(message: Message):
+    """👑 /admin_remove_premium <user_id> - Забрать премиум"""
+    if not is_admin(message.from_user.id):
+        await safe_send_message(message.from_user.id, "❌ <b>Доступ запрещён!</b>")
+        return
+    
+    try:
+        args = message.text.split()
+        if len(args) < 2:
+            await safe_send_message(
+                message.from_user.id,
+                "❌ <b>Неправильный формат!</b>\n\nИспользование:\n<code>/admin_remove_premium 123456789</code>"
+            )
+            return
+        
+        user_id = int(args[1])
+        success = db.remove_premium(user_id)
+        
+        if success:
+            user = db.get_user(user_id)
+            username = f"@{user['username']}" if user and user['username'] else str(user_id)
+            
+            await safe_send_message(
+                message.from_user.id,
+                f"✅ <b>Премиум отозван!</b>\n\n👤 {username}\n❌ Статус ПРЕМИУМ удалён"
+            )
+            
+            logger.info(f"✅ АДМИН: Премиум отозван у {user_id}")
+        else:
+            await safe_send_message(message.from_user.id, "❌ <b>Ошибка!</b>\n\nНе удалось отозвать премиум.")
+    
+    except ValueError:
+        await safe_send_message(message.from_user.id, "❌ <b>Ошибка!</b>\n\nID должен быть числом.")
+    except Exception as e:
+        logger.error(f"❌ Ошибка команды: {e}")
+        await safe_send_message(message.from_user.id, f"❌ <b>Ошибка!</b>\n\n{str(e)}")
+
+async def cmd_admin_ban_user(message: Message):
+    """👑 /admin_ban <user_id> <дни (0=навсегда)> <причина> - Забанить пользователя"""
+    if not is_admin(message.from_user.id):
+        await safe_send_message(message.from_user.id, "❌ <b>Доступ запрещён!</b>")
+        return
+    
+    try:
+        parts = message.text.split(None, 3)
+        if len(parts) < 3:
+            await safe_send_message(
+                message.from_user.id,
+                "❌ <b>Неправильный формат!</b>\n\nИспользование:\n<code>/admin_ban 123456789 30 Спам</code>\n\n📝 Параметры:\n• user_id - ID пользователя\n• дни - количество дней (0 = навсегда)\n• причина - причина бана"
+            )
+            return
+        
+        user_id = int(parts[1])
+        days = int(parts[2])
+        reason = parts[3] if len(parts) > 3 else "Нарушение правил"
+        
+        db.ban_user(user_id, reason, days if days > 0 else None)
+        
+        user = db.get_user(user_id)
+        username = f"@{user['username']}" if user and user['username'] else str(user_id)
+        
+        expire_text = f"на {days} дней" if days > 0 else "навсегда"
+        
+        await safe_send_message(
+            message.from_user.id,
+            f"✅ <b>Пользователь забанен!</b>\n\n👤 {username}\n⏱️ {expire_text}\n📝 Причина: {reason}"
+        )
+        
+        # Отправляем уведомление пользователю
+        try:
+            ban_msg = f"🚫 <b>Вы забанены!</b>\n\n📝 Причина: {reason}\n⏱️ {expire_text}"
+            await bot_instance.send_message(user_id, ban_msg)
+        except:
+            pass
+        
+        logger.warning(f"✅ АДМИН: Пользователь {user_id} забанен {expire_text}. Причина: {reason}")
+    
+    except ValueError:
+        await safe_send_message(message.from_user.id, "❌ <b>Ошибка!</b>\n\nID и дни должны быть числами.")
+    except Exception as e:
+        logger.error(f"❌ Ошибка команды: {e}")
+        await safe_send_message(message.from_user.id, f"❌ <b>Ошибка!</b>\n\n{str(e)}")
+
+async def cmd_admin_unban_user(message: Message):
+    """👑 /admin_unban <user_id> - Разбанить пользователя"""
+    if not is_admin(message.from_user.id):
+        await safe_send_message(message.from_user.id, "❌ <b>Доступ запрещён!</b>")
+        return
+    
+    try:
+        args = message.text.split()
+        if len(args) < 2:
+            await safe_send_message(
+                message.from_user.id,
+                "❌ <b>Неправильный формат!</b>\n\nИспользование:\n<code>/admin_unban 123456789</code>"
+            )
+            return
+        
+        user_id = int(args[1])
+        
+        # Удаляем запись о бане
+        conn = sqlite3.connect(db.db_path)
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM banned_users WHERE user_id = ?', (user_id,))
+        conn.commit()
+        conn.close()
+        
+        user = db.get_user(user_id)
+        username = f"@{user['username']}" if user and user['username'] else str(user_id)
+        
+        await safe_send_message(
+            message.from_user.id,
+            f"✅ <b>Пользователь разбанен!</b>\n\n👤 {username}\n✨ Доступ восстановлен"
+        )
+        
+        # Отправляем уведомление пользователю
+        try:
+            unban_msg = "✅ <b>Вас разбанили!</b>\n\n🎉 Добро пожаловать обратно! Вы снова можете использовать бота."
+            await bot_instance.send_message(user_id, unban_msg)
+        except:
+            pass
+        
+        logger.info(f"✅ АДМИН: Пользователь {user_id} разбанен")
+    
+    except ValueError:
+        await safe_send_message(message.from_user.id, "❌ <b>Ошибка!</b>\n\nID должен быть числом.")
+    except Exception as e:
+        logger.error(f"❌ Ошибка команды: {e}")
+        await safe_send_message(message.from_user.id, f"❌ <b>Ошибка!</b>\n\n{str(e)}")
+
+async def cmd_admin_user_info(message: Message):
+    """👑 /admin_info <user_id> - Информация о пользователе"""
+    if not is_admin(message.from_user.id):
+        await safe_send_message(message.from_user.id, "❌ <b>Доступ запрещён!</b>")
+        return
+    
+    try:
+        args = message.text.split()
+        if len(args) < 2:
+            await safe_send_message(
+                message.from_user.id,
+                "❌ <b>Неправильный формат!</b>\n\nИспользование:\n<code>/admin_info 123456789</code>"
+            )
+            return
+        
+        user_id = int(args[1])
+        user = db.get_user(user_id)
+        
+        if not user:
+            await safe_send_message(message.from_user.id, f"❌ <b>Пользователь не найден!</b>\n\nID: {user_id}")
+            return
+        
+        is_banned = db.is_user_banned(user_id)
+        premium_status = "✅ ДА" if user['is_premium'] else "❌ НЕТ"
+        ban_status = "🚫 ЗАБАНЕН" if is_banned else "✅ Активен"
+        
+        info_text = f"""
+👤 <b>ИНФОРМАЦИЯ О ПОЛЬЗОВАТЕЛЕ</b>
+
+🆔 ID: <code>{user['user_id']}</code>
+📝 Username: @{user['username'] or 'Не установлено'}
+👶 Имя: {user['first_name'] or 'Не установлено'}
+
+💳 Премиум: {premium_status}
+⏰ Срок действия: {user['premium_expires_at'] or 'Отсутствует'}
+
+⚠️ Статус: {ban_status}
+
+📊 <b>СТАТИСТИКА:</b>
+👍 Позитивных оценок: {user['positive_votes']}
+👎 Негативных оценок: {user['negative_votes']}
+⭐ Рейтинг: {user['rating']:.1f}%
+💬 Диалогов: {user['chats_count']}
+
+📅 Регистрация: {user['created_at']}
+🔄 Последняя активность: {user['last_activity']}
+"""
+        
+        await safe_send_message(message.from_user.id, info_text)
+    
+    except ValueError:
+        await safe_send_message(message.from_user.id, "❌ <b>Ошибка!</b>\n\nID должен быть числом.")
+    except Exception as e:
+        logger.error(f"❌ Ошибка команды: {e}")
+        await safe_send_message(message.from_user.id, f"❌ <b>Ошибка!</b>\n\n{str(e)}")
+
+async def cmd_admin_help(message: Message):
+    """👑 /admin_help - Справка по админ командам"""
+    if not is_admin(message.from_user.id):
+        await safe_send_message(message.from_user.id, "❌ <b>Доступ запрещён!</b>")
+        return
+    
+    help_text = """
+👑 <b>АДМИН КОМАНДЫ</b>
+
+💳 <b>УПРАВЛЕНИЕ ПРЕМИУМОМ:</b>
+/admin_give_premium <user_id> <месяцы> - Выдать премиум
+Пример: <code>/admin_give_premium 123456789 1</code>
+→ Выдаст премиум на 1 месяц
+→ Используйте 999 для пожизненного доступа
+
+/admin_remove_premium <user_id> - Забрать премиум
+Пример: <code>/admin_remove_premium 123456789</code>
+
+🚫 <b>УПРАВЛЕНИЕ БАНАМИ:</b>
+/admin_ban <user_id> <дни> <причина> - Забанить пользователя
+Пример: <code>/admin_ban 123456789 30 Спам</code>
+→ Используйте 0 дней для постоянного бана
+
+/admin_unban <user_id> - Разбанить пользователя
+Пример: <code>/admin_unban 123456789</code>
+
+👤 <b>ИНФОРМАЦИЯ:</b>
+/admin_info <user_id> - Информация о пользователе
+Пример: <code>/admin_info 123456789</code>
+→ Показывает полную информацию о пользователе, его статистику и статус
+
+❓ <b>СПРАВКА:</b>
+/admin_help - Показать эту справку
+"""
+    
+    await safe_send_message(message.from_user.id, help_text)
+
+# ═══════════════════════════════════════════════════════════════════════════════════════════
 
 async def cmd_start(message: Message, state: FSMContext):
     global user_fsm_contexts
@@ -1235,6 +1553,14 @@ async def main():
         dp.message.register(cmd_next, Command("next"))
         dp.message.register(cmd_stop, Command("stop"))
         
+        # Регистрация админ команд
+        dp.message.register(cmd_admin_give_premium, Command("admin_give_premium"))
+        dp.message.register(cmd_admin_remove_premium, Command("admin_remove_premium"))
+        dp.message.register(cmd_admin_ban_user, Command("admin_ban"))
+        dp.message.register(cmd_admin_unban_user, Command("admin_unban"))
+        dp.message.register(cmd_admin_user_info, Command("admin_info"))
+        dp.message.register(cmd_admin_help, Command("admin_help"))
+        
         # Регистрация callback'ов
         dp.callback_query.register(search_start_callback, F.data == "search_start")
         dp.callback_query.register(search_random_callback, F.data == "search_random")
@@ -1253,7 +1579,7 @@ async def main():
         # Обработка сообщений в чате
         dp.message.register(handle_chat_message, UserStates.in_chat)
         
-        logger.info("📱 BOT STARTED - Интересы теперь учитываются при поиске! Кнопки поиска работают!")
+        logger.info("📱 BOT STARTED - ✨ АДМИН КОМАНДЫ АКТИВИРОВАНЫ ✨")
         await dp.start_polling(bot_instance)
     except Exception as e:
         logger.error(f"❌ Критическая: {e}")
