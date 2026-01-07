@@ -573,17 +573,22 @@ async def cmd_next(message: Message, state: FSMContext):
             active_chats.pop(user_id, None)
             active_chats.pop(partner_id, None)
             
+            voting_message = "📑 <b>Оцените собеседника</b>\n\n👍 Нравится или Не нравится? Ваша оценка важна!"
+            
+            # 🔄 ОБА ПОЛУЧАЮТ НОВЫЕ СООБЩЕНИЯ (НЕ EDIT!)
             await safe_send_message(
                 user_id,
-                "📑 <b>Оцените собеседника</b>\n\n👍 Нравится или Не нравится? Ваша оценка важна!",
+                voting_message,
                 reply_markup=get_vote_keyboard(chat_id, partner_id)
             )
             
             await safe_send_message(
                 partner_id,
-                "📑 <b>Оцените собеседника</b>\n\n👍 Нравится или Не нравится? Ваша оценка важна!",
+                voting_message,
                 reply_markup=get_vote_keyboard(chat_id, user_id)
             )
+            
+            logger.info(f"📣 /next: ОБА пользователя видят новое сообщение")
         
         await state.clear()
         await cmd_search(message, state)
@@ -605,6 +610,7 @@ async def cmd_stop(message: Message, state: FSMContext):
             
             voting_message = "📑 <b>Оцените собеседника</b>\n\n👍 Нравится или Не нравится? Ваша оценка важна!"
             
+            # 🔄 ОБА ПОЛУЧАЮТ НОВЫЕ СООБЩЕНИЯ (НЕ EDIT!)
             await safe_send_message(
                 partner_id,
                 voting_message,
@@ -616,6 +622,8 @@ async def cmd_stop(message: Message, state: FSMContext):
                 voting_message,
                 reply_markup=get_vote_keyboard(chat_id, partner_id)
             )
+            
+            logger.info(f"📣 /stop: ОБА пользователя видят новое сообщение")
         
         await state.clear()
     except Exception as e:
@@ -815,6 +823,7 @@ async def next_partner_callback(callback: CallbackQuery, state: FSMContext):
             
             voting_message = "📑 <b>Оцените собеседника</b>\n\n👍 Нравится или Не нравится? Ваша оценка важна!"
             
+            # 🔄 ОБА ПОЛУЧАЮТ НОВЫЕ СООБЩЕНИЯ (НЕ EDIT!)
             await safe_send_message(
                 partner_id,
                 voting_message,
@@ -827,7 +836,7 @@ async def next_partner_callback(callback: CallbackQuery, state: FSMContext):
                 reply_markup=get_vote_keyboard(chat_id, partner_id)
             )
             
-            logger.info(f"📣 next_partner: ОБА пользователя ")
+            logger.info(f"📣 next_partner: ОБА пользователя видят новое сообщение")
         
         await state.clear()
         
@@ -860,18 +869,20 @@ async def end_chat_callback(callback: CallbackQuery, state: FSMContext):
             
             voting_message = "📑 <b>Оцените собеседника</b>\n\n👍 Нравится или Не нравится? Ваша оценка важна!"
             
+            # 🔄 ОБА ПОЛУЧАЮТ НОВЫЕ СООБЩЕНИЯ (НЕ EDIT!)
             await safe_send_message(
                 partner_id,
                 voting_message,
                 reply_markup=get_vote_keyboard(chat_id, user_id)
             )
             
-            await callback.message.edit_text(
+            await safe_send_message(
+                user_id,
                 voting_message,
                 reply_markup=get_vote_keyboard(chat_id, partner_id)
             )
             
-            logger.info(f"📣 end_chat: ОБА пользователя ")
+            logger.info(f"📣 end_chat: ОБА пользователя видят новое сообщение")
         
         await state.clear()
     except Exception as e:
@@ -900,10 +911,8 @@ async def main():
         
         dp.message.register(handle_chat_message, UserStates.in_chat)
         
-        logger.info("👫 ООО PRIVACY POLICY, TERMS, DATA DELETION")
-        logger.info("🚫 FORBIDDEN CONTENT FILTER")
-        logger.info("🚫 BAN SYSTEM")
-        logger.info("✅ БОТ ПОЛНОСТЬЩО СООТвЕТСТВУЕТ TELEGRAM TOS")
+        logger.info("📱 FULL BILATERAL SYNC - ОБА ПОЛУЧАЮТ НОВЫЕ СООБЩЕНИЯ")
+        logger.info("✅ /next + /stop + кнопки SEND_MESSAGE для ОБОИХ")
         await dp.start_polling(bot_instance)
     except Exception as e:
         logger.error(f"❌ Критическая: {e}")
