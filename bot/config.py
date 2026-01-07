@@ -12,8 +12,9 @@ BOT_TOKEN = os.getenv('BOT_TOKEN')
 # Database path
 DB_PATH = os.getenv('DATABASE_PATH', 'chat_bot.db')
 
-# Admin ID (optional)
-ADMIN_ID = os.getenv('ADMIN_ID')
+# Admin ID (optional) - преобразуем в число
+ADMIN_ID_STR = os.getenv('ADMIN_ID')
+ADMIN_ID = int(ADMIN_ID_STR) if ADMIN_ID_STR and ADMIN_ID_STR.isdigit() else None
 
 # Subscription costs (in rubles)
 SUBSCRIPTION_COST_MONTHLY = int(os.getenv('SUBSCRIPTION_COST_MONTHLY', 99))
@@ -22,5 +23,10 @@ SUBSCRIPTION_COST_LIFETIME = int(os.getenv('SUBSCRIPTION_COST_LIFETIME', 499))
 # Validate configuration
 if not BOT_TOKEN:
     raise ValueError("❌ BOT_TOKEN не установлен в .env файле!")
+
+if ADMIN_ID:
+    print(f"✅ Администратор установлен: {ADMIN_ID}")
+else:
+    print("⚠️ Администратор не установлен")
 
 print("✅ Конфигурация загружена успешно")
