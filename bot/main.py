@@ -388,7 +388,16 @@ def check_forbidden_content(text: str) -> tuple[bool, str]:
 
 def is_admin(user_id: int) -> bool:
     """Проверка, является ли пользователь администратором"""
-    return user_id == ADMIN_ID
+    if ADMIN_ID is None:
+        logger.warning(f"⚠️  ADMIN_ID не установлен")
+        return False
+    
+    result = user_id == ADMIN_ID
+    if result:
+        logger.info(f"✅ Пользователь {user_id} является администратором")
+    else:
+        logger.debug(f"❌ Пользователь {user_id} - не администратор (ADMIN_ID={ADMIN_ID})")
+    return result
 
 async def find_partner(user_id: int, category: str, search_filters: dict, bot: Bot, state: FSMContext):
     global waiting_users, active_chats, user_fsm_contexts
