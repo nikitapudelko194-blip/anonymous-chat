@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from aiogram import Bot, Dispatcher, F, types, Router
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand, MenuButtonCommands
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.filters.command import Command
@@ -888,6 +888,28 @@ async def end_chat_callback(callback: CallbackQuery, state: FSMContext):
     except Exception as e:
         logger.error(f"❌ Ошибка: {e}")
 
+async def setup_menu_button(bot: Bot):
+    """📱 Настройка меню кнопок бота"""
+    try:
+        # Список команд для меню
+        commands = [
+            BotCommand(command="search", description="🔍 Начать поиск собеседника"),
+            BotCommand(command="next", description="➡️ Перейти к следующему собеседнику"),
+            BotCommand(command="stop", description="🛑 Завершить диалог"),
+            BotCommand(command="start", description="👋 Начальное меню"),
+        ]
+        
+        # Установка меню командами
+        await bot.set_my_commands(commands)
+        
+        # Установка меню кнопки (Menu Button)
+        menu_button = MenuButtonCommands()
+        await bot.set_chat_menu_button(menu_button=menu_button)
+        
+        logger.info("✅ Menu Button установлена с командами")
+    except Exception as e:
+        logger.error(f"❌ Ошибка при установке Menu Button: {e}")
+
 async def main():
     global bot_instance
     try:
@@ -895,6 +917,9 @@ async def main():
         
         bot_instance = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
         dp = Dispatcher()
+        
+        # 📱 Установка Menu Button при старте
+        await setup_menu_button(bot_instance)
         
         dp.message.register(cmd_start, Command("start"))
         dp.message.register(cmd_privacy, Command("privacy"))
@@ -913,6 +938,7 @@ async def main():
         
         logger.info("📱 FULL BILATERAL SYNC - ОБА ПОЛУЧАЮТ НОВЫЕ СООБЩЕНИЯ")
         logger.info("✅ /next + /stop + кнопки SEND_MESSAGE для ОБОИХ")
+        logger.info("📱 Menu Button установлена с командами: /search /next /stop")
         await dp.start_polling(bot_instance)
     except Exception as e:
         logger.error(f"❌ Критическая: {e}")
