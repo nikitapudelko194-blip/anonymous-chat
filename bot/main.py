@@ -359,6 +359,72 @@ class Database:
             conn.close()
         except Exception as e:
             logger.error(f"❌ Ошибка: {e}")
+    
+    def get_stats(self):
+        """📊 Получить статистику бота"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Всего пользователей
+            cursor.execute('SELECT COUNT(*) FROM users')
+            total_users = cursor.fetchone()[0]
+            
+            # Премиум пользователей
+            cursor.execute('SELECT COUNT(*) FROM users WHERE is_premium = 1')
+            premium_users = cursor.fetchone()[0]
+            
+            # Забанено пользователей
+            cursor.execute('SELECT COUNT(*) FROM banned_users WHERE expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP')
+            banned_users = cursor.fetchone()[0]
+            
+            # Активных диалогов
+            cursor.execute('SELECT COUNT(*) FROM chats WHERE status = "active"')
+            active_chats_count = cursor.fetchone()[0]
+            
+            # Всего диалогов
+            cursor.execute('SELECT COUNT(*) FROM chats')
+            total_chats = cursor.fetchone()[0]
+            
+            # Всего сообщений
+            cursor.execute('SELECT COUNT(*) FROM messages')
+            total_messages = cursor.fetchone()[0]
+            
+            conn.close()
+            
+            return {
+                'total_users': total_users,
+                'premium_users': premium_users,
+                'banned_users': banned_users,
+                'active_chats': active_chats_count,
+                'total_chats': total_chats,
+                'total_messages': total_messages
+            }
+        except Exception as e:
+            logger.error(f"❌ Ошибка: {e}")
+            return None
+    
+    def get_premium_users(self):
+        """📋 Получить список премиум пользователей"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                SELECT user_id, username, first_name, premium_expires_at
+                FROM users
+                WHERE is_premium = 1
+                ORDER BY premium_expires_at DESC
+            ''')
+            
+            users = [dict(row) for row in cursor.fetchall()]
+            conn.close()
+            
+            return users
+        except Exception as e:
+            logger.error(f"❌ Ошибка: {e}")
+            return []
 
 class UserStates(StatesGroup):
     waiting_gender = State()
@@ -753,6 +819,76 @@ async def cmd_admin_user_info(message: Message):
         logger.error(f"❌ Ошибка команды: {e}")
         await safe_send_message(message.from_user.id, f"❌ <b>Ошибка!</b>\n\n{str(e)}")
 
+async def cmd_admin_stats(message: Message):
+    """👑 /admin_stats - Общая статистика бота"""
+    if not is_admin(message.from_user.id):
+        await safe_send_message(message.from_user.id, "❌ <b>Доступ запрещён!</b>")
+        return
+    
+    try:
+        stats = db.get_stats()
+        
+        if not stats:
+            await safe_send_message(message.from_user.id, "❌ <b>Ошибка при получении статистики!</b>")
+            return
+        
+        stats_text = f"""
+📊 <b>СТАТИСТИКА БОТА</b>
+
+👥 <b>ПОЛЬЗОВАТЕЛИ:</b>
+👨‍👩‍👧‍👦 Всего пользователей: {stats['total_users']}
+💳 Премиум пользователей: {stats['premium_users']}
+🚫 Забанено пользователей: {stats['banned_users']}
+
+💬 <b>ДИАЛОГИ:</b>
+🔴 Активных диалогов: {stats['active_chats']}
+📊 Всего диалогов: {stats['total_chats']}
+💭 Всего сообщений: {stats['total_messages']}
+
+📈 <b>СТАТИСТИКА:</b>
+💬 Среднее сообщения на диалог: {stats['total_messages'] // max(stats['total_chats'], 1) if stats['total_chats'] > 0 else 0}
+📊 Процент премиум: {(stats['premium_users'] / max(stats['total_users'], 1) * 100):.1f}%
+🚷 Процент забанено: {(stats['banned_users'] / max(stats['total_users'], 1) * 100):.1f}%
+"""
+        
+        await safe_send_message(message.from_user.id, stats_text)
+        logger.info(f"✅ АДМИН: Статистика запрошена администратором {message.from_user.id}")
+    
+    except Exception as e:
+        logger.error(f"❌ Ошибка команды: {e}")
+        await safe_send_message(message.from_user.id, f"❌ <b>Ошибка!</b>\n\n{str(e)}")
+
+async def cmd_admin_list_premium(message: Message):
+    """👑 /admin_list_premium - Список премиум пользователей"""
+    if not is_admin(message.from_user.id):
+        await safe_send_message(message.from_user.id, "❌ <b>Доступ запрещён!</b>")
+        return
+    
+    try:
+        premium_users = db.get_premium_users()
+        
+        if not premium_users:
+            await safe_send_message(message.from_user.id, "❌ <b>Нет премиум пользователей!</b>")
+            return
+        
+        # Форматируем список
+        users_list = "📋 <b>ПРЕМИУМ ПОЛЬЗОВАТЕЛИ</b>\n\n"
+        
+        for i, user in enumerate(premium_users, 1):
+            username = f"@{user['username']}" if user['username'] else f"ID: {user['user_id']}"
+            expires = user['premium_expires_at'] if user['premium_expires_at'] else "Неизвестно"
+            users_list += f"{i}. {username}\n"
+            users_list += f"   📅 Истекает: {expires}\n\n"
+        
+        users_list += f"<b>Всего премиум пользователей: {len(premium_users)}</b>"
+        
+        await safe_send_message(message.from_user.id, users_list)
+        logger.info(f"✅ АДМИН: Список премиум пользователей запрошен администратором {message.from_user.id}")
+    
+    except Exception as e:
+        logger.error(f"❌ Ошибка команды: {e}")
+        await safe_send_message(message.from_user.id, f"❌ <b>Ошибка!</b>\n\n{str(e)}")
+
 async def cmd_admin_help(message: Message):
     """👑 /admin_help - Справка по админ командам"""
     if not is_admin(message.from_user.id):
@@ -783,6 +919,14 @@ async def cmd_admin_help(message: Message):
 /admin_info <user_id> - Информация о пользователе
 Пример: <code>/admin_info 123456789</code>
 → Показывает полную информацию о пользователе, его статистику и статус
+
+📊 <b>СТАТИСТИКА:</b>
+/admin_stats - Общая статистика бота
+→ Показывает всех пользователей, премиум пользователей, забанено, диалогов и сообщений
+
+📋 <b>СПИСОК ПРЕМИУМА:</b>
+/admin_list_premium - Список всех премиум пользователей
+→ Показывает всех премиум пользователей с датами истечения подписки
 
 ❓ <b>СПРАВКА:</b>
 /admin_help - Показать эту справку
@@ -1568,6 +1712,8 @@ async def main():
         dp.message.register(cmd_admin_ban_user, Command("admin_ban"))
         dp.message.register(cmd_admin_unban_user, Command("admin_unban"))
         dp.message.register(cmd_admin_user_info, Command("admin_info"))
+        dp.message.register(cmd_admin_stats, Command("admin_stats"))
+        dp.message.register(cmd_admin_list_premium, Command("admin_list_premium"))
         dp.message.register(cmd_admin_help, Command("admin_help"))
         
         # Регистрация callback'ов
