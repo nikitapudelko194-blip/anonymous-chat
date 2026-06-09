@@ -8,6 +8,10 @@
 import sys
 import os
 
+if sys.platform == "win32":
+    import codecs
+    sys.stdout = codecs.getwriter("utf-8")(sys.stdout.detach())
+    
 print("\n" + "="*60)
 print("🧪 ПРОВЕРКА СТРУКТУРЫ МОДУЛЕЙ")
 print("="*60 + "\n")

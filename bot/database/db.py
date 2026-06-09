@@ -1,477 +1,381 @@
-import sqlite3
-import json
+import aiosqlite
+import logging
+import uuid
 from datetime import datetime, timedelta
-from typing import Optional, List, Dict
-from config import DB_PATH, BAN_DURATION, MAX_REPORTS_FOR_BAN
 
+logger = logging.getLogger(__name__)
 
 class Database:
-    def __init__(self, db_path: str = DB_PATH):
+    def __init__(self, db_path):
         self.db_path = db_path
     
-    def get_connection(self):
-        """Get database connection with row factory."""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        return conn
-    
     async def init_db(self):
-        """Initialize database with all required tables."""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        # Таблица пользователей
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER UNIQUE NOT NULL,
-                username TEXT,
-                first_name TEXT,
-                last_name TEXT,
-                gender TEXT,
-                age INTEGER,
-                interests TEXT,
-                bio TEXT,
-                is_premium BOOLEAN DEFAULT 0,
-                premium_expires_at DATETIME,
-                chats_count INTEGER DEFAULT 0,
-                skips_count INTEGER DEFAULT 0,
-                violations_count INTEGER DEFAULT 0,
-                reports_count INTEGER DEFAULT 0,
-                is_banned BOOLEAN DEFAULT 0,
-                ban_reason TEXT,
-                ban_expires_at DATETIME,
-                is_active BOOLEAN DEFAULT 1,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        
-        # Таблица чатов
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS chats (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                chat_id TEXT UNIQUE NOT NULL,
-                user1_id INTEGER NOT NULL,
-                user2_id INTEGER NOT NULL,
-                category TEXT,
-                status TEXT DEFAULT 'active',
-                reports_count INTEGER DEFAULT 0,
-                report_reasons TEXT,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                ended_at DATETIME
-            )
-        ''')
-        
-        # Таблица сообщений
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                chat_id TEXT NOT NULL,
-                sender_id INTEGER NOT NULL,
-                receiver_id INTEGER NOT NULL,
-                content TEXT NOT NULL,
-                message_type TEXT DEFAULT 'text',
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (chat_id) REFERENCES chats(chat_id)
-            )
-        ''')
-        
-        # Таблица подписок
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS subscriptions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL UNIQUE,
-                subscription_type TEXT,
-                purchase_amount REAL,
-                payment_method TEXT,
-                purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                expires_at DATETIME,
-                FOREIGN KEY (user_id) REFERENCES users(user_id)
-            )
-        ''')
-        
-        # Таблица банов
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS bans_log (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                ban_type TEXT,
-                reason TEXT,
-                reports_count INTEGER,
-                ban_date DATETIME DEFAULT CURRENT_TIMESTAMP,
-                expires_at DATETIME,
-                FOREIGN KEY (user_id) REFERENCES users(user_id)
-            )
-        ''')
-        
-        # Таблица жалоб
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS reports (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                chat_id TEXT NOT NULL,
-                reporter_id INTEGER NOT NULL,
-                reported_user_id INTEGER NOT NULL,
-                reason TEXT,
-                description TEXT,
-                status TEXT DEFAULT 'pending',
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (chat_id) REFERENCES chats(chat_id)
-            )
-        ''')
-        
-        conn.commit()
-        conn.close()
-    
-    # ===== USER METHODS =====
-    
-    async def create_user(self, user_id: int, username: str = None, first_name: str = None, 
-                         last_name: str = None) -> bool:
-        """Create new user."""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
         try:
-            cursor.execute('''
-                INSERT INTO users (user_id, username, first_name, last_name)
-                VALUES (?, ?, ?, ?)
-            ''', (user_id, username, first_name, last_name))
-            conn.commit()
-            return True
-        except sqlite3.IntegrityError:
+            async with aiosqlite.connect(self.db_path) as conn:
+                await conn.execute('''
+                    CREATE TABLE IF NOT EXISTS users (
+                        user_id INTEGER PRIMARY KEY,
+                        username TEXT,
+                        first_name TEXT,
+                        gender TEXT,
+                        age INTEGER,
+                        interests TEXT,
+                        is_premium BOOLEAN DEFAULT 0,
+                        premium_expires_at DATETIME,
+                        is_banned BOOLEAN DEFAULT 0,
+                        ban_reason TEXT,
+                        ban_expires_at DATETIME,
+                        chats_count INTEGER DEFAULT 0,
+                        positive_votes INTEGER DEFAULT 0,
+                        negative_votes INTEGER DEFAULT 0,
+                        reports_count INTEGER DEFAULT 0,
+                        rating REAL DEFAULT 0.0,
+                        status TEXT DEFAULT 'offline',
+                        last_activity DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                ''')
+                
+                await conn.execute('''
+                    CREATE TABLE IF NOT EXISTS chats (
+                        chat_id TEXT PRIMARY KEY,
+                        user1_id INTEGER NOT NULL,
+                        user2_id INTEGER NOT NULL,
+                        category TEXT,
+                        status TEXT DEFAULT 'active',
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        ended_at DATETIME
+                    )
+                ''')
+                
+                await conn.execute('''
+                    CREATE TABLE IF NOT EXISTS reports (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        chat_id TEXT NOT NULL,
+                        reporter_id INTEGER NOT NULL,
+                        reported_user_id INTEGER NOT NULL,
+                        reason TEXT,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                ''')
+                
+                await conn.execute('''
+                    CREATE TABLE IF NOT EXISTS votes (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        voter_id INTEGER NOT NULL,
+                        votee_id INTEGER NOT NULL,
+                        chat_id TEXT NOT NULL,
+                        vote_type TEXT NOT NULL,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                ''')
+                
+                await conn.execute('''
+                    CREATE TABLE IF NOT EXISTS payments (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER NOT NULL,
+                        amount INTEGER,
+                        plan TEXT,
+                        status TEXT DEFAULT 'pending',
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        expires_at DATETIME
+                    )
+                ''')
+                
+                await conn.execute('''
+                    CREATE TABLE IF NOT EXISTS banned_users (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER NOT NULL UNIQUE,
+                        reason TEXT,
+                        banned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        expires_at DATETIME
+                    )
+                ''')
+                
+                await conn.execute('''
+                    CREATE TABLE IF NOT EXISTS mandatory_channels (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        channel_id TEXT NOT NULL UNIQUE,
+                        url TEXT NOT NULL,
+                        name TEXT NOT NULL
+                    )
+                ''')
+                
+                await conn.commit()
+                logger.info("✅ БД инициализирована")
+        except Exception as e:
+            logger.error(f"❌ Ошибка БД: {e}")
+    
+    async def create_user(self, user_id, username, first_name):
+        try:
+            async with aiosqlite.connect(self.db_path) as conn:
+                await conn.execute('''
+                    INSERT OR IGNORE INTO users (user_id, username, first_name)
+                    VALUES (?, ?, ?)
+                ''', (user_id, username, first_name))
+                await conn.commit()
+        except Exception as e:
+            logger.error(f"❌ Ошибка create_user: {e}")
+    
+    async def get_user(self, user_id):
+        try:
+            async with aiosqlite.connect(self.db_path) as conn:
+                conn.row_factory = aiosqlite.Row
+                async with conn.execute('SELECT * FROM users WHERE user_id = ?', (user_id,)) as cursor:
+                    user = await cursor.fetchone()
+                    return dict(user) if user else None
+        except Exception as e:
+            logger.error(f"❌ Ошибка get_user: {e}")
+            return None
+    
+    async def is_user_banned(self, user_id):
+        try:
+            async with aiosqlite.connect(self.db_path) as conn:
+                async with conn.execute('''
+                    SELECT expires_at FROM banned_users 
+                    WHERE user_id = ? AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)
+                ''', (user_id,)) as cursor:
+                    result = await cursor.fetchone()
+                    return result is not None
+        except Exception as e:
+            logger.error(f"❌ Ошибка is_user_banned: {e}")
             return False
-        finally:
-            conn.close()
     
-    async def get_user(self, user_id: int) -> Optional[Dict]:
-        """Get user by ID."""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute('SELECT * FROM users WHERE user_id = ?', (user_id,))
-        row = cursor.fetchone()
-        conn.close()
-        
-        if row:
-            return dict(row)
-        return None
-    
-    async def update_user(self, user_id: int, **kwargs) -> bool:
-        """Update user data."""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        # Build UPDATE query dynamically
-        set_clause = ', '.join([f'{key} = ?' for key in kwargs.keys()])
-        values = list(kwargs.values()) + [user_id]
-        
-        query = f'UPDATE users SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?'
-        
+    async def is_premium_active(self, user_id):
         try:
-            cursor.execute(query, values)
-            conn.commit()
+            user = await self.get_user(user_id)
+            if not user or not user['is_premium']:
+                return False
+            
+            if user['premium_expires_at']:
+                expires = datetime.fromisoformat(user['premium_expires_at'])
+                if datetime.now() > expires:
+                    await self.remove_premium(user_id)
+                    return False
+            
             return True
-        finally:
-            conn.close()
-    
-    async def get_all_active_users(self, exclude_id: int = None) -> List[Dict]:
-        """Get all active users, optionally excluding one user."""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        if exclude_id:
-            cursor.execute('''
-                SELECT * FROM users 
-                WHERE is_active = 1 AND is_banned = 0 AND user_id != ?
-            ''', (exclude_id,))
-        else:
-            cursor.execute('''
-                SELECT * FROM users 
-                WHERE is_active = 1 AND is_banned = 0
-            ''')
-        
-        rows = cursor.fetchall()
-        conn.close()
-        
-        return [dict(row) for row in rows]
-    
-    # ===== CHAT METHODS =====
-    
-    async def create_chat(self, user1_id: int, user2_id: int, category: str) -> str:
-        """Create new chat between two users."""
-        chat_id = f"{user1_id}_{user2_id}"
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        try:
-            cursor.execute('''
-                INSERT INTO chats (chat_id, user1_id, user2_id, category)
-                VALUES (?, ?, ?, ?)
-            ''', (chat_id, user1_id, user2_id, category))
-            conn.commit()
-            return chat_id
-        finally:
-            conn.close()
-    
-    async def get_chat(self, chat_id: str) -> Optional[Dict]:
-        """Get chat by ID."""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute('SELECT * FROM chats WHERE chat_id = ?', (chat_id,))
-        row = cursor.fetchone()
-        conn.close()
-        
-        if row:
-            return dict(row)
-        return None
-    
-    async def end_chat(self, chat_id: str) -> bool:
-        """End chat session."""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        try:
-            cursor.execute('''
-                UPDATE chats 
-                SET status = 'ended', ended_at = CURRENT_TIMESTAMP 
-                WHERE chat_id = ?
-            ''', (chat_id,))
-            conn.commit()
-            return True
-        finally:
-            conn.close()
-    
-    # ===== MESSAGE METHODS =====
-    
-    async def save_message(self, chat_id: str, sender_id: int, receiver_id: int, 
-                          content: str, message_type: str = 'text') -> bool:
-        """Save message to database."""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        try:
-            cursor.execute('''
-                INSERT INTO messages (chat_id, sender_id, receiver_id, content, message_type)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (chat_id, sender_id, receiver_id, content, message_type))
-            conn.commit()
-            return True
-        finally:
-            conn.close()
-    
-    async def get_messages(self, chat_id: str, limit: int = 50) -> List[Dict]:
-        """Get messages from chat."""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            SELECT * FROM messages WHERE chat_id = ? ORDER BY created_at DESC LIMIT ?
-        ''', (chat_id, limit))
-        
-        rows = cursor.fetchall()
-        conn.close()
-        
-        return [dict(row) for row in rows]
-    
-    # ===== SUBSCRIPTION METHODS =====
-    
-    async def create_subscription(self, user_id: int, subscription_type: str, 
-                                 amount: float, payment_method: str = 'telegram_stars') -> bool:
-        """Create subscription for user."""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        # Calculate expiration date
-        if subscription_type == 'monthly':
-            expires_at = datetime.now() + timedelta(days=30)
-        elif subscription_type == 'lifetime':
-            expires_at = datetime.now() + timedelta(days=365*100)  # Практически навсегда
-        else:
+        except Exception as e:
+            logger.error(f"❌ Ошибка is_premium_active: {e}")
             return False
-        
+    
+    async def ban_user(self, user_id, reason, duration_days=None):
         try:
-            cursor.execute('''
-                INSERT OR REPLACE INTO subscriptions 
-                (user_id, subscription_type, purchase_amount, payment_method, expires_at)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (user_id, subscription_type, amount, payment_method, expires_at))
-            
-            # Обновить статус премиум в пользователе
-            cursor.execute('''
-                UPDATE users 
-                SET is_premium = 1, premium_expires_at = ?, is_banned = 0
-                WHERE user_id = ?
-            ''', (expires_at, user_id))
-            
-            conn.commit()
-            return True
-        finally:
-            conn.close()
+            expires_at = None
+            if duration_days:
+                expires_at = (datetime.now() + timedelta(days=duration_days)).isoformat()
+                
+            async with aiosqlite.connect(self.db_path) as conn:
+                await conn.execute('''
+                    INSERT OR REPLACE INTO banned_users (user_id, reason, expires_at)
+                    VALUES (?, ?, ?)
+                ''', (user_id, reason, expires_at))
+                await conn.commit()
+                logger.warning(f"🚫 Пользователь {user_id} банен: {reason}")
+        except Exception as e:
+            logger.error(f"❌ Ошибка ban_user: {e}")
     
-    async def get_subscription(self, user_id: int) -> Optional[Dict]:
-        """Get subscription for user."""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute('SELECT * FROM subscriptions WHERE user_id = ?', (user_id,))
-        row = cursor.fetchone()
-        conn.close()
-        
-        if row:
-            return dict(row)
-        return None
-    
-    async def check_premium_expired(self, user_id: int) -> bool:
-        """Check if premium has expired."""
-        sub = await self.get_subscription(user_id)
-        
-        if not sub or not sub['expires_at']:
-            return True
-        
-        expires = datetime.fromisoformat(sub['expires_at'])
-        if datetime.now() > expires:
-            # Обновить статус пользователя
-            await self.update_user(user_id, is_premium=False)
-            return True
-        
-        return False
-    
-    # ===== BAN METHODS =====
-    
-    async def ban_user(self, user_id: int, reason: str, expires_at: datetime = None) -> bool:
-        """Ban user."""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
+    async def update_user(self, user_id, **kwargs):
         try:
-            cursor.execute('''
-                UPDATE users 
-                SET is_banned = 1, ban_reason = ?, ban_expires_at = ?
-                WHERE user_id = ?
-            ''', (reason, expires_at, user_id))
-            
-            # Log ban
-            cursor.execute('''
-                INSERT INTO bans_log (user_id, ban_type, reason, ban_date, expires_at)
-                VALUES (?, 'report_based', ?, CURRENT_TIMESTAMP, ?)
-            ''', (user_id, reason, expires_at))
-            
-            conn.commit()
-            return True
-        finally:
-            conn.close()
+            fields = ', '.join([f"{k} = ?" for k in kwargs.keys()])
+            values = list(kwargs.values()) + [user_id]
+            async with aiosqlite.connect(self.db_path) as conn:
+                await conn.execute(f'UPDATE users SET {fields} WHERE user_id = ?', values)
+                await conn.commit()
+        except Exception as e:
+            logger.error(f"❌ Ошибка update_user: {e}")
     
-    async def unban_user(self, user_id: int) -> bool:
-        """Unban user."""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
+    async def give_premium(self, user_id, months):
         try:
-            cursor.execute('''
-                UPDATE users 
-                SET is_banned = 0, ban_reason = NULL, ban_expires_at = NULL
-                WHERE user_id = ?
-            ''', (user_id,))
-            conn.commit()
-            return True
-        finally:
-            conn.close()
+            expires_at = (datetime.now() + timedelta(days=months * 30)).isoformat()
+            async with aiosqlite.connect(self.db_path) as conn:
+                await conn.execute('''
+                    UPDATE users SET is_premium = 1, premium_expires_at = ?
+                    WHERE user_id = ?
+                ''', (expires_at, user_id))
+                await conn.commit()
+                logger.info(f"✅ Премиум выдан {user_id} на {months} месяцев до {expires_at}")
+                return True
+        except Exception as e:
+            logger.error(f"❌ Ошибка give_premium: {e}")
+            return False
     
-    async def get_expired_bans(self) -> List[Dict]:
-        """Get users with expired bans."""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            SELECT * FROM users 
-            WHERE is_banned = 1 AND ban_expires_at IS NOT NULL 
-            AND ban_expires_at < CURRENT_TIMESTAMP
-        ''')
-        
-        rows = cursor.fetchall()
-        conn.close()
-        
-        return [dict(row) for row in rows]
-    
-    # ===== REPORT METHODS =====
-    
-    async def create_report(self, chat_id: str, reporter_id: int, reported_user_id: int,
-                           reason: str, description: str = None) -> bool:
-        """Create report against user."""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
+    async def remove_premium(self, user_id):
         try:
-            cursor.execute('''
-                INSERT INTO reports (chat_id, reporter_id, reported_user_id, reason, description)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (chat_id, reporter_id, reported_user_id, reason, description))
-            conn.commit()
-            return True
-        finally:
-            conn.close()
+            async with aiosqlite.connect(self.db_path) as conn:
+                await conn.execute('''
+                    UPDATE users SET is_premium = 0, premium_expires_at = NULL
+                    WHERE user_id = ?
+                ''', (user_id,))
+                await conn.commit()
+                logger.info(f"✅ Премиум забран у {user_id}")
+                return True
+        except Exception as e:
+            logger.error(f"❌ Ошибка remove_premium: {e}")
+            return False
     
-    async def increment_reports(self, user_id: int) -> int:
-        """Increment report count for user and return new count."""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
+    async def delete_user_data(self, user_id):
         try:
-            cursor.execute('''
-                UPDATE users 
-                SET reports_count = reports_count + 1
-                WHERE user_id = ?
-            ''', (user_id,))
-            
-            cursor.execute('SELECT reports_count FROM users WHERE user_id = ?', (user_id,))
-            row = cursor.fetchone()
-            conn.commit()
-            
-            return row['reports_count'] if row else 0
-        finally:
-            conn.close()
+            async with aiosqlite.connect(self.db_path) as conn:
+                await conn.execute('DELETE FROM users WHERE user_id = ?', (user_id,))
+                await conn.execute('DELETE FROM votes WHERE voter_id = ? OR votee_id = ?', (user_id, user_id))
+                await conn.execute('DELETE FROM reports WHERE reporter_id = ? OR reported_user_id = ?', (user_id, user_id))
+                await conn.execute('DELETE FROM chats WHERE user1_id = ? OR user2_id = ?', (user_id, user_id))
+                await conn.commit()
+                logger.info(f"🗑️ Очищены все данные пользователя {user_id}")
+                return True
+        except Exception as e:
+            logger.error(f"❌ Ошибка delete_user_data: {e}")
+            return False
     
-    async def get_reports(self, user_id: int) -> List[Dict]:
-        """Get all reports against user."""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            SELECT * FROM reports WHERE reported_user_id = ? ORDER BY created_at DESC
-        ''', (user_id,))
-        
-        rows = cursor.fetchall()
-        conn.close()
-        
-        return [dict(row) for row in rows]
-    
-    # ===== STATS METHODS =====
-    
-    async def increment_chats_count(self, user_id: int) -> bool:
-        """Increment user chats count."""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
+    async def create_chat(self, user1_id, user2_id, category):
         try:
-            cursor.execute('''
-                UPDATE users SET chats_count = chats_count + 1 WHERE user_id = ?
-            ''', (user_id,))
-            conn.commit()
-            return True
-        finally:
-            conn.close()
+            chat_id = str(uuid.uuid4())
+            async with aiosqlite.connect(self.db_path) as conn:
+                await conn.execute('''
+                    INSERT INTO chats (chat_id, user1_id, user2_id, category, status)
+                    VALUES (?, ?, ?, ?, 'active')
+                ''', (chat_id, user1_id, user2_id, category))
+                await conn.commit()
+                return chat_id
+        except Exception as e:
+            logger.error(f"❌ Ошибка create_chat: {e}")
+            return None
     
-    async def increment_skips_count(self, user_id: int) -> bool:
-        """Increment user skips count."""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
+    async def end_chat(self, chat_id):
         try:
-            cursor.execute('''
-                UPDATE users SET skips_count = skips_count + 1 WHERE user_id = ?
-            ''', (user_id,))
-            conn.commit()
-            return True
-        finally:
-            conn.close()
+            async with aiosqlite.connect(self.db_path) as conn:
+                await conn.execute('''
+                    UPDATE chats SET status = "ended", ended_at = CURRENT_TIMESTAMP
+                    WHERE chat_id = ?
+                ''', (chat_id,))
+                await conn.commit()
+                logger.info(f"✅ Чат {chat_id} завершён")
+        except Exception as e:
+            logger.error(f"❌ Ошибка end_chat: {e}")
+    
+    async def save_report(self, chat_id, reporter_id, reported_user_id, reason):
+        try:
+            async with aiosqlite.connect(self.db_path) as conn:
+                await conn.execute('''
+                    INSERT INTO reports (chat_id, reporter_id, reported_user_id, reason)
+                    VALUES (?, ?, ?, ?)
+                ''', (chat_id, reporter_id, reported_user_id, reason))
+                await conn.commit()
+        except Exception as e:
+            logger.error(f"❌ Ошибка save_report: {e}")
+    
+    async def save_vote(self, voter_id, votee_id, chat_id, vote_type):
+        try:
+            async with aiosqlite.connect(self.db_path) as conn:
+                await conn.execute('''
+                    INSERT INTO votes (voter_id, votee_id, chat_id, vote_type)
+                    VALUES (?, ?, ?, ?)
+                ''', (voter_id, votee_id, chat_id, vote_type))
+                
+                if vote_type == 'positive':
+                    await conn.execute('UPDATE users SET positive_votes = positive_votes + 1 WHERE user_id = ?', (votee_id,))
+                else:
+                    await conn.execute('UPDATE users SET negative_votes = negative_votes + 1 WHERE user_id = ?', (votee_id,))
+                
+                async with conn.execute('SELECT positive_votes, negative_votes FROM users WHERE user_id = ?', (votee_id,)) as cursor:
+                    result = await cursor.fetchone()
+                    if result:
+                        positive, negative = result
+                        total = positive + negative
+                        rating = (positive / total * 100) if total > 0 else 0
+                        await conn.execute('UPDATE users SET rating = ? WHERE user_id = ?', (rating, votee_id))
+                
+                await conn.commit()
+        except Exception as e:
+            logger.error(f"❌ Ошибка save_vote: {e}")
+    
+    async def get_stats(self):
+        try:
+            async with aiosqlite.connect(self.db_path) as conn:
+                async with conn.execute('SELECT COUNT(*) FROM users') as c:
+                    total_users = (await c.fetchone())[0]
+                
+                async with conn.execute('SELECT COUNT(*) FROM users WHERE is_premium = 1') as c:
+                    premium_users = (await c.fetchone())[0]
+                
+                async with conn.execute('SELECT COUNT(*) FROM banned_users WHERE expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP') as c:
+                    banned_users = (await c.fetchone())[0]
+                
+                async with conn.execute('SELECT COUNT(*) FROM chats WHERE status = "active"') as c:
+                    active_chats_count = (await c.fetchone())[0]
+                
+                async with conn.execute('SELECT COUNT(*) FROM chats') as c:
+                    total_chats = (await c.fetchone())[0]
+                
+                return {
+                    'total_users': total_users,
+                    'premium_users': premium_users,
+                    'banned_users': banned_users,
+                    'active_chats': active_chats_count,
+                    'total_chats': total_chats,
+                    'total_messages': 0 # Legacy, table removed
+                }
+        except Exception as e:
+            logger.error(f"❌ Ошибка get_stats: {e}")
+            return None
+    
+    async def get_premium_users(self):
+        try:
+            async with aiosqlite.connect(self.db_path) as conn:
+                conn.row_factory = aiosqlite.Row
+                async with conn.execute('''
+                    SELECT user_id, username, first_name, premium_expires_at
+                    FROM users
+                    WHERE is_premium = 1
+                    ORDER BY premium_expires_at DESC
+                ''') as cursor:
+                    users = [dict(row) for row in await cursor.fetchall()]
+                    return users
+        except Exception as e:
+            logger.error(f"❌ Ошибка get_premium_users: {e}")
+            return []
+
+    async def add_mandatory_channel(self, channel_id: str, url: str, name: str):
+        try:
+            async with aiosqlite.connect(self.db_path) as conn:
+                await conn.execute('''
+                    INSERT OR REPLACE INTO mandatory_channels (channel_id, url, name)
+                    VALUES (?, ?, ?)
+                ''', (channel_id, url, name))
+                await conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"❌ Ошибка add_mandatory_channel: {e}")
+            return False
+
+    async def remove_mandatory_channel(self, channel_id: str):
+        try:
+            async with aiosqlite.connect(self.db_path) as conn:
+                cursor = await conn.execute('DELETE FROM mandatory_channels WHERE channel_id = ?', (channel_id,))
+                await conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            logger.error(f"❌ Ошибка remove_mandatory_channel: {e}")
+            return False
+
+    async def get_mandatory_channels(self):
+        try:
+            async with aiosqlite.connect(self.db_path) as conn:
+                conn.row_factory = aiosqlite.Row
+                async with conn.execute('SELECT * FROM mandatory_channels') as cursor:
+                    channels = [dict(row) for row in await cursor.fetchall()]
+                    return channels
+        except Exception as e:
+            logger.error(f"❌ Ошибка get_mandatory_channels: {e}")
+            return []
+
+    async def get_all_users(self):
+        try:
+            async with aiosqlite.connect(self.db_path) as conn:
+                async with conn.execute('SELECT user_id FROM users') as cursor:
+                    rows = await cursor.fetchall()
+                    return [row[0] for row in rows]
+        except Exception as e:
+            logger.error(f"❌ Ошибка get_all_users: {e}")
+            return []
+
